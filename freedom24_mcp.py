@@ -121,13 +121,16 @@ def login_api_key(pub_key: str, private_key: str) -> str:
 def get_session_info() -> str:
     """Check whether the current brokerage session is valid.
 
-    Reports the active auth mode and fetches basic account info to confirm the
-    session/keys still work. Use this to verify connectivity before trading.
+    Reports the active auth mode and confirms the session/keys still work by
+    performing an enabled read. Use this to verify connectivity before trading.
     """
     try:
         CLIENT.ensure_auth()
-        info = CLIENT.call(COMMANDS["user_info"], {})
-        return _result({"authenticated": True, "mode": CLIENT.mode, "user_info": info})
+        # NOTE: getUserInfo is "Command disabled" (code 12) for some API keys —
+        # that's a key permission, not an auth failure. Verify connectivity with
+        # an enabled read (getPositionJson) so this check doesn't false-alarm.
+        CLIENT.call(COMMANDS["portfolio"], {})
+        return _result({"authenticated": True, "mode": CLIENT.mode})
     except Exception as exc:  # noqa: BLE001
         return _error("get_session_info", exc)
 
@@ -229,6 +232,76 @@ def get_top_securities(market: str = "US") -> str:
     Useful for discovering active names and gauging market interest.
     """
     return _call("get_top_securities", "top", {"market": market})
+
+
+@mcp.tool()
+def get_options(
+    underlying: str,
+    option_type: Optional[str] = None,
+    expiry: Optional[str] = None,
+    ltr: str = "FIX",
+    limit: int = 300,
+) -> str:
+    """Return the option chain for an `underlying` stock (e.g. "AAPL.US").
+
+    Lists tradeable option contracts on the underlying. Each entry has the option
+    `ticker` (Tradernet form, e.g. "+AAPL.26MAY2026.P287.5"), `option_type`
+    (CALL/PUT), `strike_price`, `expire_date`, `last_trade_date`, and
+    `contract_multiplier` (shares per contract, typically 100). Feed an option
+    `ticker` to get_quote for pricing, or to place_order to trade it.
+
+    Chains are large (thousands of contracts), so narrow with `option_type`
+    ("call"/"put") and/or `expiry` (a date prefix like "2026-06" or a full
+    "2026-06-19"). `ltr` is the underlying's market name (default "FIX" for US
+    stocks). `limit` caps how many contracts are returned (sorted by expiry then
+    strike); `count` in the response reports the total that matched the filters.
+
+    NOTE: options require a trading-enabled, options-approved Freedom24 account,
+    and 1 contract = `contract_multiplier` (usually 100) shares of the underlying.
+    """
+    try:
+        type_key = option_type.lower().strip() if option_type else None
+        if type_key and type_key not in ("call", "put"):
+            raise ValueError("option_type must be 'call', 'put', or omitted")
+
+        data = CLIENT.call(COMMANDS["options"], {"ltr": ltr, "base_contract_code": underlying})
+
+        # The API returns a bare list of contracts; tolerate a wrapped envelope too.
+        if isinstance(data, dict):
+            contracts = data.get("result") or data.get("options") or data.get("data") or []
+        else:
+            contracts = data
+        if not isinstance(contracts, list):
+            return _result(data)  # unexpected shape -> surface as-is
+
+        def _strike(contract: dict) -> float:
+            try:
+                return float(contract.get("strike_price"))
+            except (TypeError, ValueError):
+                return float("inf")
+
+        items = contracts
+        if type_key:
+            want = type_key.upper()  # CALL / PUT
+            items = [c for c in items if str(c.get("option_type", "")).upper() == want]
+        if expiry:
+            items = [c for c in items if str(c.get("expire_date", "")).startswith(expiry)]
+
+        items = sorted(items, key=lambda c: (str(c.get("expire_date", "")), _strike(c)))
+        capped = items[: max(limit, 1)]
+
+        return _result(
+            {
+                "underlying": underlying,
+                "count": len(items),
+                "returned": len(capped),
+                "truncated": len(items) > len(capped),
+                "filters": {"option_type": type_key, "expiry": expiry},
+                "options": capped,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _error("get_options", exc)
 
 
 # ===========================================================================
@@ -467,7 +540,7 @@ def _log_startup() -> None:
     logger.info(
         "Registered tools: login, login_api_key, get_session_info, get_portfolio, "
         "get_cashflows, get_quote, get_candles, search_ticker, get_ticker_info, get_news, "
-        "get_top_securities, get_active_orders, get_orders_history, place_order, cancel_order, "
+        "get_top_securities, get_options, get_active_orders, get_orders_history, place_order, cancel_order, "
         "get_market_status, get_alerts, add_alert, delete_alert, get_broker_report, get_trades_history"
     )
 

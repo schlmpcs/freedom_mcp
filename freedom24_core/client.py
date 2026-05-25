@@ -50,6 +50,7 @@ COMMANDS: dict[str, str] = {
     "delete_alert": "delAlert",       # verify
     "broker_report": "getBrokerReport",
     "trades_history": "getTradesHistory",  # verify
+    "options": "getOptionsByMktNameAndBaseAsset",  # option chain for an underlying
 }
 
 _SENSITIVE_KEYS = {

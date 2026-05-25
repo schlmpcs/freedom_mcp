@@ -15,7 +15,7 @@ Tradernet API: portfolio, quotes, candles, orders, alerts, and reports.
 |------|-------|
 | Auth | `login`, `login_api_key`, `get_session_info` |
 | Portfolio | `get_portfolio`, `get_cashflows` |
-| Quotes | `get_quote`, `get_candles`, `search_ticker`, `get_ticker_info`, `get_news`, `get_top_securities` |
+| Quotes | `get_quote`, `get_candles`, `search_ticker`, `get_ticker_info`, `get_news`, `get_top_securities`, `get_options` |
 | Orders | `get_active_orders`, `get_orders_history`, `place_order`, `cancel_order` |
 | Market | `get_market_status`, `get_alerts`, `add_alert`, `delete_alert` |
 | Reports | `get_broker_report`, `get_trades_history` |

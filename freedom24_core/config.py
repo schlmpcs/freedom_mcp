@@ -50,6 +50,11 @@ class Config:
     timeout: float = DEFAULT_TIMEOUT
     order_timeout: float = DEFAULT_ORDER_TIMEOUT
     dry_run: bool = False
+    # MCP server transport (Phase 1)
+    mcp_transport: str = "stdio"
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = 8000
+    mcp_bearer_token: Optional[str] = None
 
     @property
     def has_api_key(self) -> bool:
@@ -78,6 +83,12 @@ def load_config() -> Config:
     except ValueError:
         order_timeout = DEFAULT_ORDER_TIMEOUT
 
+    mcp_port_raw = _clean(os.getenv("MCP_PORT"))
+    try:
+        mcp_port = int(mcp_port_raw) if mcp_port_raw else 8000
+    except ValueError:
+        mcp_port = 8000
+
     return Config(
         login=_clean(os.getenv("FREEDOM24_LOGIN")),
         password=_clean(os.getenv("FREEDOM24_PASSWORD")),
@@ -88,4 +99,8 @@ def load_config() -> Config:
         timeout=timeout,
         order_timeout=order_timeout,
         dry_run=_as_bool(os.getenv("FREEDOM24_DRY_RUN")),
+        mcp_transport=_clean(os.getenv("MCP_TRANSPORT")) or "stdio",
+        mcp_host=_clean(os.getenv("MCP_HOST")) or "127.0.0.1",
+        mcp_port=mcp_port,
+        mcp_bearer_token=_clean(os.getenv("MCP_BEARER_TOKEN")),
     )

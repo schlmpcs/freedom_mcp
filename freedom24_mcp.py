@@ -18,15 +18,10 @@ from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from client import COMMANDS, TradernetClient, TradernetError
-from config import load_config
+from freedom24_core import COMMANDS, TradernetClient, TradernetError, load_config, setup_logging
 
 # --- logging: stderr only (stdout is the MCP transport) --------------------
-logging.basicConfig(
-    stream=sys.stderr,
-    level=logging.INFO,
-    format="%(asctime)s [freedom24-mcp] %(levelname)s: %(message)s",
-)
+setup_logging()
 logger = logging.getLogger("freedom24_mcp")
 
 CONFIG = load_config()
@@ -471,10 +466,24 @@ def _log_startup() -> None:
     )
 
 
-def main() -> None:
-    _log_startup()
-    mcp.run()  # stdio transport
-
-
 if __name__ == "__main__":
-    main()
+    _log_startup()
+    transport = CONFIG.mcp_transport
+    if transport == "streamable-http":
+        if not CONFIG.mcp_bearer_token:
+            logger.error(
+                "MCP_BEARER_TOKEN must be set when MCP_TRANSPORT=streamable-http. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+            sys.exit(1)
+        import uvicorn
+        from middleware import BearerAuthMiddleware
+        http_app = BearerAuthMiddleware(mcp.streamable_http_app(), CONFIG.mcp_bearer_token)
+        logger.info(
+            "Starting MCP server (streamable-http) on %s:%s",
+            CONFIG.mcp_host,
+            CONFIG.mcp_port,
+        )
+        uvicorn.run(http_app, host=CONFIG.mcp_host, port=CONFIG.mcp_port, log_config=None)
+    else:
+        mcp.run()  # stdio transport

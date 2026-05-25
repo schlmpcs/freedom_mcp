@@ -15,8 +15,8 @@ from typing import Any, Optional
 
 import requests
 
-from auth import build_signed_request
-from config import Config
+from .auth import build_signed_request
+from .config import Config
 
 logger = logging.getLogger("freedom24_mcp")
 
@@ -53,6 +53,7 @@ COMMANDS: dict[str, str] = {
 }
 
 _SENSITIVE_KEYS = {
+    "mcp_bearer_token",
     "password",
     "sid",
     "apiKey",

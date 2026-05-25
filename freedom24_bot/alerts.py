@@ -8,6 +8,7 @@ import logging
 from freedom24_core import COMMANDS
 
 from .formatting import extract_alerts, format_alert_fire
+from .state import load_seen, save_seen
 
 logger = logging.getLogger("freedom24_mcp")
 
@@ -37,3 +38,20 @@ def detect_new_fires(alerts: list[dict], seen: set[int]) -> tuple[list[str], set
             if aid not in seen:
                 messages.append(format_alert_fire(alert))
     return messages, fired_now
+
+
+async def poll_alerts_job(context) -> None:
+    """JobQueue callback: poll getAlertsList, relay any new fires to Telegram."""
+    client = context.bot_data["client"]
+    config = context.bot_data["config"]
+    try:
+        payload = await asyncio.to_thread(client.call, COMMANDS["alerts"], {})
+    except Exception as exc:  # noqa: BLE001 - log and skip this tick
+        logger.warning("alert poll failed: %s", exc)
+        return
+    seen = load_seen(config.bot_state_path)
+    messages, next_seen = detect_new_fires(extract_alerts(payload), seen)
+    for text in messages:
+        await context.bot.send_message(chat_id=config.telegram_chat_id, text=text)
+    if next_seen != seen:
+        save_seen(config.bot_state_path, next_seen)

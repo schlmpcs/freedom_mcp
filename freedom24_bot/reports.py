@@ -58,3 +58,31 @@ async def fetch_and_render_premarket(client) -> str:
             quotes[ticker] = await _call(client, "quote", {"tickers": ticker})
     orders = await _call(client, "active_orders", {"active_only": 1})
     return render_premarket(market, positions_payload, quotes, orders)
+
+
+async def daily_snapshot_job(context) -> None:
+    """JobQueue callback: send the daily snapshot (skips weekends)."""
+    config = context.bot_data["config"]
+    now = datetime.datetime.now(ZoneInfo(config.bot_snapshot_tz))
+    if not is_market_weekday(now):
+        return
+    try:
+        text = await fetch_and_render_snapshot(context.bot_data["client"])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("daily snapshot failed: %s", exc)
+        return
+    await context.bot.send_message(chat_id=config.telegram_chat_id, text=text)
+
+
+async def premarket_job(context) -> None:
+    """JobQueue callback: send the pre-market heads-up (skips weekends)."""
+    config = context.bot_data["config"]
+    now = datetime.datetime.now(ZoneInfo(config.bot_premarket_tz))
+    if not is_market_weekday(now):
+        return
+    try:
+        text = await fetch_and_render_premarket(context.bot_data["client"])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("premarket report failed: %s", exc)
+        return
+    await context.bot.send_message(chat_id=config.telegram_chat_id, text=text)

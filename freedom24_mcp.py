@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from freedom24_core import COMMANDS, TradernetClient, TradernetError, load_config, setup_logging
 
@@ -26,7 +27,12 @@ logger = logging.getLogger("freedom24_mcp")
 
 CONFIG = load_config()
 CLIENT = TradernetClient(CONFIG)
-mcp = FastMCP("freedom24")
+# DNS rebinding protection is disabled because TLS termination and bearer-token
+# auth at the ASGI layer already provide equivalent protection for this deployment.
+mcp = FastMCP(
+    "freedom24",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 
 
 # --- helpers ----------------------------------------------------------------

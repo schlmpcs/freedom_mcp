@@ -51,3 +51,47 @@ def format_quote(payload: dict) -> str:
         f"Bid {fmt_num(q.get('bbp'))} / Ask {fmt_num(q.get('bap'))}  "
         f"Vol {fmt_num(q.get('vol'), 0)}"
     ).strip()
+
+
+def extract_portfolio(payload: dict) -> tuple[list[dict], list[dict]]:
+    """Return (positions, accounts) from a getPositionJson payload, tolerant of nesting."""
+    if not isinstance(payload, dict):
+        return [], []
+    # Try result.ps, then top-level ps, then top-level acc/pos.
+    container = None
+    result = payload.get("result")
+    if isinstance(result, dict) and isinstance(result.get("ps"), dict):
+        container = result["ps"]
+    elif isinstance(payload.get("ps"), dict):
+        container = payload["ps"]
+    else:
+        container = payload
+    positions = container.get("pos") if isinstance(container.get("pos"), list) else []
+    accounts = container.get("acc") if isinstance(container.get("acc"), list) else []
+    return positions, accounts
+
+
+def format_portfolio(payload: dict) -> str:
+    """Multi-line portfolio summary: positions, P&L, and cash balances."""
+    positions, accounts = extract_portfolio(payload)
+    if not positions and not accounts:
+        return "No open positions or cash data."
+    lines: list[str] = []
+    if positions:
+        lines.append("📊 Positions:")
+        total_value = 0.0
+        for p in positions:
+            try:
+                total_value += float(str(p.get("market_value", 0)).replace(",", "."))
+            except (TypeError, ValueError):
+                pass
+            lines.append(
+                f"• {p.get('i', '?')}  x{fmt_num(p.get('q'), 0)} @ {fmt_num(p.get('mkt_price'))}  "
+                f"val {fmt_num(p.get('market_value'))}  P&L {fmt_num(p.get('profit_price'))}"
+            )
+        lines.append(f"Total position value: {fmt_num(total_value)}")
+    if accounts:
+        lines.append("💵 Cash:")
+        for a in accounts:
+            lines.append(f"• {a.get('curr', '?')}: {fmt_num(a.get('s'))}")
+    return "\n".join(lines)

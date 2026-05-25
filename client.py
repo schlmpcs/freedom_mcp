@@ -33,14 +33,15 @@ COMMANDS: dict[str, str] = {
     "user_info": "getUserInfo",
     "portfolio": "getPositionJson",
     "cashflows": "getUserCashFlows",
-    "quote": "getStockData",
+    "quote": "getStockQuotesJson",
     "candles": "getQuotesHistory",
     "search": "tickerFinder",         # verify
     "ticker_info": "getSecurityInfo",
     "news": "getNewsList",            # verify
     "top": "getTopSecurities",        # verify
-    "active_orders": "getOrders",     # verify
+    "active_orders": "getNotifyOrderJson",  # current orders (active_only flag)
     "orders_history": "getOrdersHistory",
+    "auth_info": "getAuthInfo",       # opens the trading security session (V2)
     "place_order": "putTradeOrder",
     "cancel_order": "delTradeOrder",
     "market_status": "getMarketStatus",  # verify
@@ -152,23 +153,72 @@ class TradernetClient:
         return {"status": "ok", "mode": "login"}
 
     # -- request dispatch ---------------------------------------------------
-    def call(self, cmd: str, params: dict | None = None) -> Any:
-        """Execute an authenticated API command and return parsed JSON."""
+    def call(self, cmd: str, params: dict | None = None, timeout: float | None = None) -> Any:
+        """Execute an authenticated API command and return parsed JSON.
+
+        ``timeout`` overrides the default per-request timeout (used by order
+        commands, which respond slower — see :data:`Config.order_timeout`).
+        """
         self.ensure_auth()
         if self._mode == "apikey":
-            return self._post_signed(cmd, params or {})
-        return self._post_session(cmd, params or {}, with_sid=True)
+            return self._post_signed(cmd, params or {}, timeout=timeout)
+        return self._post_session(cmd, params or {}, with_sid=True, timeout=timeout)
 
-    def _post_signed(self, cmd: str, params: dict) -> Any:
+    def open_trading_session(self) -> dict:
+        """Open the security session required before placing/cancelling orders.
+
+        Per the Tradernet docs, sensitive writes (``putTradeOrder`` /
+        ``delTradeOrder``) require a security session to be opened first. In V2
+        API-key mode this is done by calling ``getAuthInfo``, which returns a
+        ``sess_id`` once the session is open (and ``f_trade`` indicating whether
+        the key may trade at all). Raises :class:`TradernetError` if the key is
+        not authorized to trade, so callers get an actionable message instead of
+        an opaque "not authorized to open a security session" from the order
+        endpoint. Called before each order so an expired session is re-opened.
+        """
+        self.ensure_auth()
+        if self._mode != "apikey":
+            raise TradernetError(
+                "Opening a trading session is only implemented for API-key mode. "
+                "Login/password trading needs the SMS/EDS security-session flow, "
+                "which is not wired up in this server."
+            )
+        info = self.call(COMMANDS["auth_info"])
+        sess_id = info.get("sess_id") if isinstance(info, dict) else None
+        f_trade = info.get("f_trade") if isinstance(info, dict) else None
+        if not f_trade or not sess_id:
+            raise TradernetError(
+                "Could not open a trading security session via getAuthInfo "
+                f"(f_trade={f_trade!r}, sess_id={sess_id!r}). This API key is "
+                "almost certainly not authorized to trade — enable trading "
+                "permission for the key in your Freedom24 API settings, or use a "
+                "trading-enabled key."
+            )
+        logger.info("Trading security session opened (f_trade=%s)", f_trade)
+        return info  # type: ignore[return-value]
+
+    def _timeout_message(self, cmd: str, timeout: float) -> str:
+        """Timeout error text; warns about possible submission for order writes."""
+        msg = f"{cmd}: request timed out after {timeout}s"
+        if cmd in (COMMANDS["place_order"], COMMANDS["cancel_order"]):
+            msg += (
+                ". IMPORTANT: the request is slow, not necessarily failed — the "
+                "order may still have been submitted/cancelled. Check active "
+                "orders (getNotifyOrderJson) before retrying to avoid a duplicate."
+            )
+        return msg
+
+    def _post_signed(self, cmd: str, params: dict, timeout: float | None = None) -> Any:
         body, headers = build_signed_request(self._pub_key, self._priv_key, cmd, params)
         url = f"{self.config.api_url.rstrip('/')}/v2/cmd/{cmd}"
+        eff_timeout = timeout or self.config.timeout
         logger.info("POST %s cmd=%s params=%s", url, cmd, _redact(params))
         try:
             resp = self._session.post(
-                url, data=body, headers=headers, timeout=self.config.timeout
+                url, data=body, headers=headers, timeout=eff_timeout
             )
         except requests.Timeout as exc:
-            raise TradernetError(f"{cmd}: request timed out after {self.config.timeout}s") from exc
+            raise TradernetError(self._timeout_message(cmd, eff_timeout)) from exc
         except requests.RequestException as exc:
             raise TradernetError(f"{cmd}: network error: {exc}") from exc
         return self._handle(resp, cmd)
@@ -179,6 +229,7 @@ class TradernetClient:
         params: dict,
         with_sid: bool = True,
         _retried: bool = False,
+        timeout: float | None = None,
     ) -> Any:
         payload_params = dict(params or {})
         if with_sid:
@@ -189,11 +240,12 @@ class TradernetClient:
             payload_params["sid"] = self._sid
         body = {"cmd": cmd, "params": payload_params}
         url = self.config.api_url
+        eff_timeout = timeout or self.config.timeout
         logger.info("POST %s cmd=%s params=%s", url, cmd, _redact(payload_params))
         try:
-            resp = self._session.post(url, json=body, timeout=self.config.timeout)
+            resp = self._session.post(url, json=body, timeout=eff_timeout)
         except requests.Timeout as exc:
-            raise TradernetError(f"{cmd}: request timed out after {self.config.timeout}s") from exc
+            raise TradernetError(self._timeout_message(cmd, eff_timeout)) from exc
         except requests.RequestException as exc:
             raise TradernetError(f"{cmd}: network error: {exc}") from exc
 
@@ -205,7 +257,7 @@ class TradernetClient:
                 logger.info("Session looks expired; re-logging in and retrying %s", cmd)
                 self._sid = None
                 self.login(self._login, self._password)
-                return self._post_session(cmd, params, with_sid=True, _retried=True)
+                return self._post_session(cmd, params, with_sid=True, _retried=True, timeout=timeout)
             raise
 
     # -- response handling --------------------------------------------------

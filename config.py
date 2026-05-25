@@ -19,6 +19,10 @@ load_dotenv(override=False)
 
 DEFAULT_API_URL = "https://freedom24.com/api"
 DEFAULT_TIMEOUT = 15.0
+# Order endpoints (putTradeOrder/delTradeOrder) respond noticeably slower than
+# read commands; a short timeout makes the tool report a false failure while the
+# order actually lands — dangerous, as a retry would duplicate a live order.
+DEFAULT_ORDER_TIMEOUT = 60.0
 
 
 def _clean(value: Optional[str]) -> Optional[str]:
@@ -44,6 +48,7 @@ class Config:
     rsa_private_key: Optional[str] = None
     api_url: str = DEFAULT_API_URL
     timeout: float = DEFAULT_TIMEOUT
+    order_timeout: float = DEFAULT_ORDER_TIMEOUT
     dry_run: bool = False
 
     @property
@@ -67,6 +72,12 @@ def load_config() -> Config:
     except ValueError:
         timeout = DEFAULT_TIMEOUT
 
+    order_timeout_raw = _clean(os.getenv("FREEDOM24_ORDER_TIMEOUT"))
+    try:
+        order_timeout = float(order_timeout_raw) if order_timeout_raw else DEFAULT_ORDER_TIMEOUT
+    except ValueError:
+        order_timeout = DEFAULT_ORDER_TIMEOUT
+
     return Config(
         login=_clean(os.getenv("FREEDOM24_LOGIN")),
         password=_clean(os.getenv("FREEDOM24_PASSWORD")),
@@ -75,5 +86,6 @@ def load_config() -> Config:
         rsa_private_key=_clean(os.getenv("FREEDOM24_RSA_PRIVATE_KEY")),
         api_url=_clean(os.getenv("FREEDOM24_API_URL")) or DEFAULT_API_URL,
         timeout=timeout,
+        order_timeout=order_timeout,
         dry_run=_as_bool(os.getenv("FREEDOM24_DRY_RUN")),
     )

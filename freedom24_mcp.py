@@ -236,7 +236,7 @@ def get_top_securities(market: str = "US") -> str:
 @mcp.tool()
 def get_active_orders() -> str:
     """Return all currently open (unfilled / partially filled) orders."""
-    return _call("get_active_orders", "active_orders", {"active_only": True})
+    return _call("get_active_orders", "active_orders", {"active_only": 1})
 
 
 @mcp.tool()
@@ -244,8 +244,9 @@ def get_orders_history(days: int = 30) -> str:
     """Return past orders (filled, cancelled, rejected) over the last `days`."""
     today = datetime.utcnow()
     params = {
-        "date_from": (today - timedelta(days=max(days, 1))).strftime("%Y-%m-%d"),
-        "date_to": today.strftime("%Y-%m-%d"),
+        # getOrdersHistory wants ISO-8601 `from`/`till` (NOT date_from/date_to).
+        "from": (today - timedelta(days=max(days, 1))).strftime("%Y-%m-%dT00:00:00"),
+        "till": today.strftime("%Y-%m-%dT23:59:59"),
     }
     return _call("get_orders_history", "orders_history", params)
 
@@ -325,7 +326,8 @@ def place_order(
             )
 
         logger.info("Submitting order: %s", preview)
-        return _result(CLIENT.call(COMMANDS["place_order"], params))
+        CLIENT.open_trading_session()  # required before putTradeOrder
+        return _result(CLIENT.call(COMMANDS["place_order"], params, timeout=CONFIG.order_timeout))
     except Exception as exc:  # noqa: BLE001
         return _error("place_order", exc)
 
@@ -349,7 +351,10 @@ def cancel_order(order_id: str, confirm: bool = False) -> str:
                     "next_step": "Re-call cancel_order with confirm=true to actually cancel.",
                 }
             )
-        return _result(CLIENT.call(COMMANDS["cancel_order"], {"order_id": order_id}))
+        CLIENT.open_trading_session()  # required before delTradeOrder
+        return _result(
+            CLIENT.call(COMMANDS["cancel_order"], {"order_id": order_id}, timeout=CONFIG.order_timeout)
+        )
     except Exception as exc:  # noqa: BLE001
         return _error("cancel_order", exc)
 

@@ -3,7 +3,9 @@
 #   sudo cp deploy/freedom24-bot.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now freedom24-bot
-# Adjust WorkingDirectory / paths if the checkout is not at /opt/freedom_mcp.
+# Adjust WorkingDirectory / paths if the checkout is not at /opt/freedom24.
+# WorkingDirectory must be the repo root so `python -m freedom24_bot` resolves
+# the package (the module is found relative to the working directory).
 [Unit]
 Description=Freedom24 Telegram bot + automation worker
 After=network-online.target
@@ -11,9 +13,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/freedom_mcp
-EnvironmentFile=/opt/freedom_mcp/.env
-ExecStart=/opt/freedom_mcp/.venv/bin/python -m freedom24_bot
+WorkingDirectory=/opt/freedom24
+EnvironmentFile=/opt/freedom24/.env
+ExecStart=/opt/freedom24/.venv/bin/python -m freedom24_bot
 Restart=always
 RestartSec=5
 

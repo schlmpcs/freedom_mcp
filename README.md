@@ -178,30 +178,63 @@ cost** — and uses long-polling, so it needs no inbound network exposure.
 
 1. Create a bot with **@BotFather** and copy the token.
 2. Get your numeric chat ID (message **@userinfobot**).
-3. Add to `.env` (see `.env.example` for the full block):
+3. Install the bot's dependency into your venv (it's already in
+   `requirements.txt`):
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Add to `.env` (see `.env.example` for the full block):
    ```dotenv
    TELEGRAM_BOT_TOKEN=123456:your-botfather-token
    TELEGRAM_CHAT_ID=000000000
    ```
-4. Run locally:
+5. Run locally **from the repo root** (`python -m freedom24_bot` resolves the
+   package relative to the working directory — running it from elsewhere gives
+   `No module named freedom24_bot`):
    ```bash
    .venv\Scripts\python.exe -m freedom24_bot      # Windows
    .venv/bin/python -m freedom24_bot              # Linux
    ```
-   Then message your bot `/help`, `/portfolio`.
+   It logs `freedom24-bot starting (long-polling)`; message your bot `/help` and
+   `/portfolio` to confirm, then `Ctrl-C`. If it logs `TELEGRAM_BOT_TOKEN and
+   TELEGRAM_CHAT_ID are required`, the `.env` vars aren't set.
 
 ### Deploy (same droplet as the MCP server)
 
+The droplet checkout is at **`/opt/freedom24`**. The systemd unit
+(`deploy/freedom24-bot.service`) is written for that path — if your checkout
+lives elsewhere, edit the three `/opt/freedom24` lines in it (or pipe through
+`sed` as below) before installing.
+
 ```bash
+cd /opt/freedom24
 git pull
+
+# install the new dependency into the droplet venv
+/opt/freedom24/.venv/bin/pip install -r /opt/freedom24/requirements.txt
+
+# add TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (and any BOT_* overrides) to .env
+nano /opt/freedom24/.env
+
+# smoke test before installing the service (Ctrl-C after /help works)
+/opt/freedom24/.venv/bin/python -m freedom24_bot
+
+# install + start the service
 sudo cp deploy/freedom24-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now freedom24-bot
+
+# verify
+systemctl status freedom24-bot --no-pager
+journalctl -u freedom24-bot -n 50 --no-pager
 ```
 
+> If your checkout is **not** at `/opt/freedom24`, rewrite the paths on copy:
+> `sudo sed 's#/opt/freedom24#/your/path#g' deploy/freedom24-bot.service | sudo tee /etc/systemd/system/freedom24-bot.service`
+
 The bot reuses the existing `FREEDOM24_PUB_KEY`/`FREEDOM24_PRIV_KEY` for broker
-auth and runs alongside `freedom24-mcp`. Redeploy with
-`git pull && systemctl restart freedom24-mcp freedom24-bot`.
+auth and runs alongside `freedom24-mcp`. Redeploy after changes with
+`cd /opt/freedom24 && git pull && sudo systemctl restart freedom24-mcp freedom24-bot`.
 
 ## Command names
 
@@ -253,10 +286,24 @@ If signed requests are rejected with a signature error, the serialization in
 
 ```
 freedom_mcp/
-├── freedom24_mcp.py   # MCP server + tool definitions
-├── auth.py            # nonce, HMAC-SHA256 signing, RSA EDS helper
-├── client.py          # HTTP client, command map, session handling
-├── config.py          # .env / environment config loader
+├── freedom24_mcp.py   # MCP server + tool definitions (entry point)
+├── middleware.py      # bearer-token ASGI middleware (HTTP transport)
+├── freedom24_core/    # shared broker library (used by the MCP server AND the bot)
+│   ├── auth.py        #   nonce, HMAC-SHA256 signing, RSA EDS helper
+│   ├── client.py      #   HTTP client, command map, session handling
+│   ├── config.py      #   .env / environment config loader
+│   └── logging_setup.py
+├── freedom24_bot/     # Phase 2: Telegram bot + automation worker (python -m freedom24_bot)
+│   ├── __main__.py    #   builds the PTB app, registers handlers + jobs
+│   ├── commands.py    #   read-only slash-command handlers
+│   ├── alerts.py      #   alert poll + fire detection
+│   ├── reports.py     #   pre-market + daily snapshot reports
+│   ├── formatting.py  #   pure payload→string formatters
+│   ├── scheduling.py  #   tz-aware report scheduling
+│   ├── security.py    #   single-chat-id access control
+│   └── state.py       #   relayed-alert-ID persistence
+├── deploy/            # systemd unit(s)
+├── tests/             # pytest suite
 ├── .env.example       # credential template
 ├── requirements.txt
 └── README.md

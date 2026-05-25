@@ -95,3 +95,86 @@ def format_portfolio(payload: dict) -> str:
         for a in accounts:
             lines.append(f"• {a.get('curr', '?')}: {fmt_num(a.get('s'))}")
     return "\n".join(lines)
+
+
+def _alert_price(alert: dict) -> str:
+    """Extract a display price from the alert's trigger_price (a JSON string)."""
+    raw = alert.get("trigger_price")
+    if isinstance(raw, dict):
+        return fmt_num(raw.get("price"))
+    if isinstance(raw, str):
+        try:
+            return fmt_num(json.loads(raw).get("price"))
+        except (ValueError, AttributeError, TypeError):
+            return raw
+    return fmt_num(raw)
+
+
+def format_alert_fire(alert: dict) -> str:
+    """Telegram message for a single fired alert."""
+    return (
+        f"🔔 Alert: {alert.get('ticker', '?')} "
+        f"{alert.get('trigger_type', '')} {_alert_price(alert)}".strip()
+    )
+
+
+def extract_alerts(payload: dict) -> list[dict]:
+    """Pull the alerts array from a getAlertsList payload."""
+    if isinstance(payload, dict) and isinstance(payload.get("alerts"), list):
+        return payload["alerts"]
+    return []
+
+
+def format_alerts_list(payload: dict) -> str:
+    """Human-readable list of currently armed alerts."""
+    alerts = [a for a in extract_alerts(payload) if "error" not in a]
+    if not alerts:
+        return "No alerts armed."
+    lines = ["⏰ Armed alerts:"]
+    for a in alerts:
+        fired = " (triggered)" if str(a.get("triggered") or "") not in ("", "0") else ""
+        lines.append(f"• {a.get('ticker', '?')} {a.get('trigger_type', '')} {_alert_price(a)}{fired}")
+    return "\n".join(lines)
+
+
+def extract_orders(payload: dict) -> list[dict]:
+    """Pull the orders array from an active-orders payload, tolerant of nesting.
+
+    Real getNotifyOrderJson shape (confirmed by the live spike) is
+    ``result.orders.order[]`` — i.e. ``result.orders`` is a dict whose ``order``
+    key holds the list. Flatter variants are tolerated as fallbacks.
+    """
+    if not isinstance(payload, dict):
+        return []
+
+    def _from_orders_obj(obj):
+        if isinstance(obj, dict) and isinstance(obj.get("order"), list):
+            return obj["order"]
+        if isinstance(obj, list):
+            return obj
+        return None
+
+    result = payload.get("result")
+    if isinstance(result, dict):
+        found = _from_orders_obj(result.get("orders"))
+        if found is not None:
+            return found
+    found = _from_orders_obj(payload.get("orders"))
+    if found is not None:
+        return found
+    return []
+
+
+def format_orders(payload: dict) -> str:
+    """Human-readable list of active orders."""
+    orders = extract_orders(payload)
+    if not orders:
+        return "No active orders."
+    lines = ["📂 Active orders:"]
+    for o in orders:
+        lines.append(
+            f"• {o.get('instr', o.get('ticker', '?'))} "
+            f"{o.get('oper', o.get('side', ''))} qty {fmt_num(o.get('q', o.get('qty')), 0)} "
+            f"@ {fmt_num(o.get('p', o.get('price')))}"
+        )
+    return "\n".join(lines)

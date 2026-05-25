@@ -141,6 +141,68 @@ with its tools.
 - "Set a price alert for SBER.RU above 300."
 - "Give me a broker report for 2026-01-01 to 2026-03-31."
 
+## Phase 2 — Telegram bot + automation worker
+
+A separate, **deterministic** service (`freedom24_bot/`, run as `python -m
+freedom24_bot`) that relays Freedom24 alert fires to your Telegram, answers
+read-only account queries via slash commands, and pushes two scheduled reports.
+It talks to the broker directly through `freedom24_core` — **no LLM, no token
+cost** — and uses long-polling, so it needs no inbound network exposure.
+
+> Alerts are **armed in the Freedom24 app** (price thresholds and % moves). The
+> bot is read-only: it polls `getAlertsList`, detects fires, and relays them. It
+> never places or cancels orders.
+
+### Commands (only your configured chat ID may use them)
+
+| Command | Action |
+|---------|--------|
+| `/portfolio` | Positions, P&L, cash balances. |
+| `/quote TICKER` | Current quote, e.g. `/quote AAPL.US`. |
+| `/orders` | Active orders. |
+| `/alerts` | Currently armed price alerts. |
+| `/report` | Daily snapshot on demand. |
+| `/status` | Service health / auth mode. |
+| `/help` | List commands. |
+
+### Scheduled pushes
+
+- **Pre-market heads-up** — daily at `BOT_PREMARKET_TIME` in `BOT_PREMARKET_TZ`
+  (default 08:30 `America/New_York`, ~1h before the US open): market status,
+  overnight moves on your holdings, open orders.
+- **Daily snapshot** — daily at `BOT_SNAPSHOT_TIME` in `BOT_SNAPSHOT_TZ`
+  (default 08:00 `Asia/Karachi`): positions, P&L, cash; reflects the prior US
+  close. Both skip weekends. DST is handled automatically via `zoneinfo`.
+
+### Setup
+
+1. Create a bot with **@BotFather** and copy the token.
+2. Get your numeric chat ID (message **@userinfobot**).
+3. Add to `.env` (see `.env.example` for the full block):
+   ```dotenv
+   TELEGRAM_BOT_TOKEN=123456:your-botfather-token
+   TELEGRAM_CHAT_ID=000000000
+   ```
+4. Run locally:
+   ```bash
+   .venv\Scripts\python.exe -m freedom24_bot      # Windows
+   .venv/bin/python -m freedom24_bot              # Linux
+   ```
+   Then message your bot `/help`, `/portfolio`.
+
+### Deploy (same droplet as the MCP server)
+
+```bash
+git pull
+sudo cp deploy/freedom24-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now freedom24-bot
+```
+
+The bot reuses the existing `FREEDOM24_PUB_KEY`/`FREEDOM24_PRIV_KEY` for broker
+auth and runs alongside `freedom24-mcp`. Redeploy with
+`git pull && systemctl restart freedom24-mcp freedom24-bot`.
+
 ## Command names
 
 All API command (`cmd`) names live in one place — the `COMMANDS` dict in

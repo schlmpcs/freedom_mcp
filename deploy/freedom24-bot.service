@@ -1,0 +1,21 @@
+# Freedom24 Telegram bot + automation worker (Phase 2).
+# Install on the droplet:
+#   sudo cp deploy/freedom24-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now freedom24-bot
+# Adjust WorkingDirectory / paths if the checkout is not at /opt/freedom_mcp.
+[Unit]
+Description=Freedom24 Telegram bot + automation worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/freedom_mcp
+EnvironmentFile=/opt/freedom_mcp/.env
+ExecStart=/opt/freedom_mcp/.venv/bin/python -m freedom24_bot
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

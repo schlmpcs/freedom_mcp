@@ -21,3 +21,7 @@ docs/
 CLAUDE.md
 sigprobe*.py
 *.log
+
+# --- Bot runtime state (relayed-alert IDs) ---
+bot_state.json
+bot_state.json.tmp

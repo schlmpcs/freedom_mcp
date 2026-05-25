@@ -1,0 +1,23 @@
+# --- Secrets: NEVER commit ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+
+# --- Local-only (not for the repo) ---
+docs/
+CLAUDE.md
+sigprobe*.py
+*.log

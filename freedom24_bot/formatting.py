@@ -178,3 +178,39 @@ def format_orders(payload: dict) -> str:
             f"@ {fmt_num(o.get('p', o.get('price')))}"
         )
     return "\n".join(lines)
+
+
+def extract_markets(payload: dict) -> list[dict]:
+    """Pull the market-status rows from a getMarketStatus payload.
+
+    Real shape (per the API docs) is ``result.markets.m[]`` — ``result.markets``
+    is a dict whose ``m`` key holds the list. Flatter variants are tolerated.
+    """
+    if not isinstance(payload, dict):
+        return []
+
+    def _from_markets_obj(obj):
+        if isinstance(obj, dict) and isinstance(obj.get("m"), list):
+            return obj["m"]
+        if isinstance(obj, list):
+            return obj
+        return None
+
+    result = payload.get("result")
+    if isinstance(result, dict):
+        found = _from_markets_obj(result.get("markets"))
+        if found is not None:
+            return found
+    found = _from_markets_obj(payload.get("markets"))
+    if found is not None:
+        return found
+    return []
+
+
+def format_market_status(payload: dict) -> str:
+    """One-line market-status summary, e.g. 'Markets: FIX OPEN, EU CLOSE'. Empty if none."""
+    markets = extract_markets(payload)
+    if not markets:
+        return ""
+    parts = [f"{m.get('n2') or m.get('n', '?')} {m.get('s', '?')}" for m in markets]
+    return "Markets: " + ", ".join(parts)

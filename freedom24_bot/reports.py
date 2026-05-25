@@ -10,8 +10,8 @@ from zoneinfo import ZoneInfo
 from freedom24_core import COMMANDS
 
 from .formatting import (
-    extract_portfolio, extract_quote, format_orders, format_portfolio,
-    fmt_num, fmt_signed_pct,
+    extract_portfolio, extract_quote, format_market_status, format_orders,
+    format_portfolio, fmt_num, fmt_signed_pct,
 )
 from .scheduling import is_market_weekday
 
@@ -22,6 +22,9 @@ def render_premarket(market: dict, positions_payload: dict,
                      quotes_by_ticker: dict, orders_payload: dict) -> str:
     """Compose the pre-market heads-up message (pure)."""
     lines = ["🌅 Pre-market heads-up"]
+    market_line = format_market_status(market)
+    if market_line:
+        lines.append(market_line)
     positions, _ = extract_portfolio(positions_payload)
     if positions:
         lines.append("\nHoldings overnight:")

@@ -145,16 +145,17 @@ def get_portfolio() -> str:
 
 
 @mcp.tool()
-def get_cashflows(days: int = 30) -> str:
-    """Return money movements (deposits, withdrawals, fees) over the last `days`.
+def get_cashflows(limit: int = 200, skip: int = 0, without_refund: bool = False) -> str:
+    """Return the account's cash-flow ledger: deposits, withdrawals, fees, dividends.
 
-    Useful for cash reconciliation and understanding balance changes.
+    Each entry has a `type_code` (e.g. deposit, withdrawal, commission_for_trades),
+    `sum`, `currency`, `date`, and `comment`. `limit` caps the number of rows
+    (most recent first), `skip` offsets for paging, and `without_refund` excludes
+    refund entries. Use this for cash reconciliation and to total net deposits.
     """
-    today = datetime.utcnow()
-    params = {
-        "date_from": (today - timedelta(days=max(days, 1))).strftime("%Y-%m-%d"),
-        "date_to": today.strftime("%Y-%m-%d"),
-    }
+    params: dict[str, Any] = {"take": limit, "skip": skip}
+    if without_refund:
+        params["without_refund"] = 1
     return _call("get_cashflows", "cashflows", params)
 
 
@@ -392,29 +393,47 @@ def delete_alert(alert_id: str) -> str:
 # Reports
 # ===========================================================================
 @mcp.tool()
-def get_broker_report(from_date: str, to_date: str) -> str:
-    """Return the broker report between `from_date` and `to_date`.
+def get_broker_report(from_date: str, to_date: str, report_type: Optional[str] = None) -> str:
+    """Return the broker report between `from_date` and `to_date` (YYYY-MM-DD).
 
-    Dates are "YYYY-MM-DD". The report covers trades, fees, and cash activity
-    for the period — useful for accounting and tax purposes.
+    The report covers account balances, trades, commissions, corporate actions,
+    and cash/securities movements for the period. `report_type` narrows the
+    response to one data block; useful values:
+      - "in_outs"     — deposits & withdrawals of funds
+      - "cash_flows"  — all money movements
+      - "trades"      — trades in the period
+      - "commissions" — fees charged
+      - "account_at_start" / "account_at_end" — balances at period bounds
+    Omit `report_type` for the full report.
     """
-    params = {"date_from": from_date, "date_to": to_date}
+    params: dict[str, Any] = {
+        "date_start": from_date,
+        "date_end": to_date,
+        "time_period": "23:59:59",  # required end-of-day cut (API error 109 if missing)
+        "format": "json",
+    }
+    if report_type:
+        params["type"] = report_type
     return _call("get_broker_report", "broker_report", params)
 
 
 @mcp.tool()
-def get_trades_history(ticker: Optional[str] = None, days: int = 30) -> str:
+def get_trades_history(ticker: Optional[str] = None, days: int = 30, max_trades: int = 0) -> str:
     """Return executed trades over the last `days`, optionally filtered by `ticker`.
 
-    Unlike orders, these are actual fills with execution price and time.
+    Unlike orders, these are actual fills with execution price and time. Each
+    trade includes a `profit` field (realized P&L). `max_trades` caps the count;
+    0 (the default) returns ALL trades in the window — use it to total realized
+    P&L since inception by passing a large `days`.
     """
     today = datetime.utcnow()
     params: dict[str, Any] = {
-        "date_from": (today - timedelta(days=max(days, 1))).strftime("%Y-%m-%d"),
-        "date_to": today.strftime("%Y-%m-%d"),
+        "beginDate": (today - timedelta(days=max(days, 1))).strftime("%Y-%m-%d"),
+        "endDate": today.strftime("%Y-%m-%d"),
+        "max": max_trades,
     }
     if ticker:
-        params["ticker"] = ticker
+        params["nt_ticker"] = ticker
     return _call("get_trades_history", "trades_history", params)
 
 

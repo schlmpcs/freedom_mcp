@@ -32,7 +32,7 @@ COMMANDS: dict[str, str] = {
     "login": "getSID",                # verify: login -> sid
     "user_info": "getUserInfo",
     "portfolio": "getPositionJson",
-    "cashflows": "getCashInOutInfo",  # verify
+    "cashflows": "getUserCashFlows",
     "quote": "getStockData",
     "candles": "getQuotesHistory",
     "search": "tickerFinder",         # verify

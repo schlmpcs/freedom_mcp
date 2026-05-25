@@ -157,10 +157,16 @@ same.
 
 ## How auth/signing works
 
-- **API key (V2):** payload `{cmd, params, nonce, apiKey}` is flattened to a
-  sorted bracket-notation query string (`apiKey=...&cmd=...&nonce=...&params[ticker]=AAPL`),
-  HMAC-SHA256-signed with your secret key, and sent to `{api_url}/v2/cmd/{cmd}`
-  as `x-www-form-urlencoded` with the hex digest in the `X-NtApi-Sig` header.
+- **API key (V2):** payload `{cmd, params, nonce, apiKey}` is sent to
+  `{api_url}/v2/cmd/{cmd}` as `x-www-form-urlencoded` with an HMAC-SHA256 digest
+  in the `X-NtApi-Sig` header. The **signature** and the **body** use two
+  *different* serializations and **neither is URL-encoded** (matching the official
+  Tradernet `PublicApiClient` V2):
+  - signature canonical (`convert_to_query_string`) — sorted, nested dicts recursed
+    in place, no brackets: `…&params=date_from=…&date_to=…`
+  - body (`url_form_encoded`) — sorted, bracket notation: `…&params[date_from]=…`
+  - empty `params` is omitted entirely. Reusing one bracketed/encoded string for
+    both (the old approach) yields `"Invalid signature provided"`.
 - **Login/password:** posts `{cmd, params}` to `{api_url}` to obtain a `sid`,
   then includes `sid` in every subsequent request. The session auto-refreshes
   (re-login + one retry) if it expires.

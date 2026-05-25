@@ -37,6 +37,13 @@ def _as_bool(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _as_int(value: Optional[str], default: int) -> int:
+    try:
+        return int(value) if value not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class Config:
     """Resolved server configuration. Mutable so tools can override at runtime."""
@@ -55,6 +62,15 @@ class Config:
     mcp_host: str = "127.0.0.1"
     mcp_port: int = 8000
     mcp_bearer_token: Optional[str] = None
+    # Telegram bot / automation worker (Phase 2)
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[int] = None
+    bot_alert_poll_seconds: int = 60
+    bot_snapshot_time: str = "08:00"
+    bot_snapshot_tz: str = "Asia/Karachi"
+    bot_premarket_time: str = "08:30"
+    bot_premarket_tz: str = "America/New_York"
+    bot_state_path: str = "bot_state.json"
 
     @property
     def has_api_key(self) -> bool:
@@ -103,4 +119,16 @@ def load_config() -> Config:
         mcp_host=_clean(os.getenv("MCP_HOST")) or "127.0.0.1",
         mcp_port=mcp_port,
         mcp_bearer_token=_clean(os.getenv("MCP_BEARER_TOKEN")),
+        telegram_bot_token=_clean(os.getenv("TELEGRAM_BOT_TOKEN")),
+        telegram_chat_id=(
+            int(_clean(os.getenv("TELEGRAM_CHAT_ID")))
+            if (_clean(os.getenv("TELEGRAM_CHAT_ID")) or "").lstrip("-").isdigit()
+            else None
+        ),
+        bot_alert_poll_seconds=_as_int(_clean(os.getenv("BOT_ALERT_POLL_SECONDS")), 60),
+        bot_snapshot_time=_clean(os.getenv("BOT_SNAPSHOT_TIME")) or "08:00",
+        bot_snapshot_tz=_clean(os.getenv("BOT_SNAPSHOT_TZ")) or "Asia/Karachi",
+        bot_premarket_time=_clean(os.getenv("BOT_PREMARKET_TIME")) or "08:30",
+        bot_premarket_tz=_clean(os.getenv("BOT_PREMARKET_TZ")) or "America/New_York",
+        bot_state_path=_clean(os.getenv("BOT_STATE_PATH")) or "bot_state.json",
     )

@@ -62,6 +62,8 @@ _SENSITIVE_KEYS = {
     "priv_key",
     "private_key",
     "sig",
+    "telegram_bot_token",
+    "bot_token",
 }
 
 # Substrings that indicate a session/auth failure worth retrying after re-login.

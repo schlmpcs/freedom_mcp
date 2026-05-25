@@ -76,23 +76,35 @@ FREEDOM24_DRY_RUN=false
 `.env` is gitignored. The server auto-logs-in on the first tool call using
 whichever credentials are present (API key takes priority).
 
-Test it standalone — it should print startup info to stderr and then wait on
-stdio:
+You normally **don't launch the server yourself** — Claude Code starts it on
+demand over stdio (step 4 wires that up). But you can run it directly as a quick
+sanity check, using the **venv interpreter** (a bare `python` won't have the
+deps). It prints startup info to stderr and then waits on stdio — `Ctrl-C` to
+stop:
 
 ```bash
-python freedom24_mcp.py
+.venv/bin/python freedom24_mcp.py            # macOS/Linux
+.venv\Scripts\python.exe freedom24_mcp.py    # Windows
 ```
 
-## 4. Add to Claude Code
+## 4. Add to Claude Code (run locally)
 
-Add an entry to your MCP config (`~/.claude.json`, or via
-`claude mcp add`). Use the **absolute path** to `freedom24_mcp.py`.
+This is the normal way to use it locally: you **register the server once**, and
+Claude Code launches it over **stdio** automatically each session — there's no
+process to keep running, no port, nothing exposed on the network. (Running it as
+a remote HTTP service on a server is a separate, optional setup — see
+[Remote deployment](#remote-deployment) below.)
+
+Add an entry to your MCP config (`~/.claude.json`, or via `claude mcp add`).
+Point `command` at the **venv interpreter** and use the **absolute path** to
+`freedom24_mcp.py` — both must be absolute, since Claude Code launches this from
+its own working directory:
 
 ```json
 {
   "mcpServers": {
     "freedom24": {
-      "command": "python",
+      "command": "/absolute/path/to/.venv/bin/python",
       "args": ["/absolute/path/to/freedom24_mcp.py"],
       "env": {
         "FREEDOM24_PUB_KEY": "your_public_key",
@@ -103,29 +115,22 @@ Add an entry to your MCP config (`~/.claude.json`, or via
 }
 ```
 
-Login/password variant:
+On Windows, `command` is `C:\\absolute\\path\\to\\.venv\\Scripts\\python.exe`.
+Login/password variant — same shape, swap the `env` block:
 
 ```json
-{
-  "mcpServers": {
-    "freedom24": {
-      "command": "python",
-      "args": ["/absolute/path/to/freedom24_mcp.py"],
       "env": {
         "FREEDOM24_LOGIN": "your_login",
         "FREEDOM24_PASSWORD": "your_password"
       }
-    }
-  }
-}
 ```
 
-> Tip: if you used a `.venv`, point `command` at that interpreter, e.g.
-> `"command": "/absolute/path/to/.venv/bin/python"` (Windows:
-> `".venv\\Scripts\\python.exe"`). Credentials in `env` here override `.env`.
+> Credentials in `env` here override `.env`. If you'd rather keep them only in
+> `.env`, you can omit the `env` block — the server reads `.env` from its own
+> directory on startup.
 
 Restart Claude Code (or run `/mcp`) and you should see the `freedom24` server
-with its tools.
+with its tools. Ask it "check my Freedom24 session is working" to confirm.
 
 ## 5. Example prompts
 
@@ -140,6 +145,34 @@ with its tools.
 - "Cancel order 123456." (again, requires confirmation)
 - "Set a price alert for SBER.RU above 300."
 - "Give me a broker report for 2026-01-01 to 2026-03-31."
+
+## Remote deployment
+
+Optional. The **same** server can run as a long-lived **HTTP** service instead
+of stdio, so you can reach it from any machine. Set these in `.env`:
+
+```dotenv
+MCP_TRANSPORT=streamable-http
+MCP_HOST=127.0.0.1
+MCP_PORT=8000
+# generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
+MCP_BEARER_TOKEN=your-long-random-token
+```
+
+Then launch it the same way (`.venv/bin/python freedom24_mcp.py`) — it now serves
+streamable-HTTP via uvicorn on `MCP_HOST:MCP_PORT`, and every request must carry
+`Authorization: Bearer <token>`. Run it bound to `127.0.0.1` behind a TLS reverse
+proxy (e.g. nginx + Let's Encrypt) under a systemd unit so it restarts on boot.
+
+Connect Claude Code from any machine:
+
+```bash
+claude mcp add --transport http freedom24 https://your-host/mcp \
+  --header "Authorization: Bearer your-long-random-token"
+```
+
+> ⚠️ This exposes a live brokerage account over the network. Use a long random
+> bearer token, always TLS, and treat the token like a password.
 
 ## Phase 2 — Telegram bot + automation worker
 

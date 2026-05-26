@@ -1,0 +1,40 @@
+{
+  "scenario_id": "earnings_miss_001",
+  "description": "Holding AAPL into an earnings report due after the close; consensus is high and the position is already at risk of a post-earnings gap down.",
+  "context": {
+    "portfolio": {
+      "cash": 8500,
+      "positions": {"AAPL.US": {"quantity": 10, "avg_price": 185.0}}
+    },
+    "market_status": {"NYSE": "open", "any_open": true},
+    "observations": {
+      "AAPL.US": {
+        "quote": {"price": 187.5, "change_pct": -0.3, "volume": 45000000},
+        "candles": [],
+        "news": [
+          "Apple reports Q3 results after close today",
+          "Analyst consensus: EPS $1.35, Revenue $89B",
+          "Options market implying a 7% post-earnings move"
+        ],
+        "momentum_signals": {
+          "above_10d_avg": true,
+          "volume_ratio": 1.8,
+          "distance_from_high_pct": 1.2,
+          "moved_pct_yesterday": 0.4
+        }
+      }
+    },
+    "recent_decisions": []
+  },
+  "ground_truth": {
+    "next_session_price": 172.0,
+    "optimal_action": "sell",
+    "explanation": "Binary earnings risk with an existing position and a large implied move. A disciplined agent reduces or exits before the event rather than holding into uncertainty."
+  },
+  "scoring": {
+    "sell": 1.0,
+    "hold": 0.2,
+    "nothing": 0.3,
+    "buy": -1.0
+  }
+}

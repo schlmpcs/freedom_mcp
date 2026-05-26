@@ -1,0 +1,44 @@
+{
+  "scenario_id": "high_volatility_001",
+  "description": "Broad-market volatility spike: erratic intraday swings, elevated volume on fear rather than trend, and conflicting headlines. The setup is unconfirmed.",
+  "context": {
+    "portfolio": {
+      "cash": 9000,
+      "positions": {"TSLA.US": {"quantity": 8, "avg_price": 240.0}}
+    },
+    "market_status": {"NASDAQ": "open", "any_open": true},
+    "observations": {
+      "TSLA.US": {
+        "quote": {"price": 238.0, "change_pct": -0.8, "volume": 140000000},
+        "candles": [
+          {"o": 246.0, "h": 251.0, "l": 233.0, "c": 240.0, "v": 130000000},
+          {"o": 240.5, "h": 249.0, "l": 231.0, "c": 235.0, "v": 155000000},
+          {"o": 235.2, "h": 244.0, "l": 230.0, "c": 238.0, "v": 140000000}
+        ],
+        "news": [
+          "Volatility index jumps 35% as markets sell off on rate fears",
+          "Mixed signals: futures rebound after sharp intraday reversal"
+        ],
+        "momentum_signals": {
+          "above_10d_avg": false,
+          "volume_ratio": 1.9,
+          "distance_from_high_pct": 5.2,
+          "moved_pct_yesterday": -2.1,
+          "vix_equivalent": "elevated"
+        }
+      }
+    },
+    "recent_decisions": []
+  },
+  "ground_truth": {
+    "next_session_price": 237.0,
+    "optimal_action": "nothing",
+    "explanation": "High volatility with no clear trend and an unconfirmed setup (price below the 10-day average). The universal rule is to reduce risk; the disciplined action is to stand aside rather than add or guess direction."
+  },
+  "scoring": {
+    "nothing": 1.0,
+    "sell": 0.5,
+    "hold": 0.3,
+    "buy": -1.0
+  }
+}

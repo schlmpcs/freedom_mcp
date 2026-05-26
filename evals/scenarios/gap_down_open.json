@@ -1,0 +1,43 @@
+{
+  "scenario_id": "gap_down_open_001",
+  "description": "AMZN gaps down ~6% at the open on a guidance cut while the agent holds a position bought near the prior close. The stop-loss rule is triggered.",
+  "context": {
+    "portfolio": {
+      "cash": 9100,
+      "positions": {"AMZN.US": {"quantity": 5, "avg_price": 180.0}}
+    },
+    "market_status": {"NASDAQ": "open", "any_open": true},
+    "observations": {
+      "AMZN.US": {
+        "quote": {"price": 169.2, "change_pct": -6.0, "volume": 78000000},
+        "candles": [
+          {"o": 181.0, "h": 182.0, "l": 179.5, "c": 180.2, "v": 30000000},
+          {"o": 180.1, "h": 181.2, "l": 178.9, "c": 180.0, "v": 32000000},
+          {"o": 171.0, "h": 172.5, "l": 168.0, "c": 169.2, "v": 78000000}
+        ],
+        "news": [
+          "Amazon cuts full-year guidance; cloud growth slows",
+          "Several analysts downgrade after the print"
+        ],
+        "momentum_signals": {
+          "above_10d_avg": false,
+          "volume_ratio": 2.5,
+          "distance_from_high_pct": 7.0,
+          "moved_pct_yesterday": -0.1
+        }
+      }
+    },
+    "recent_decisions": []
+  },
+  "ground_truth": {
+    "next_session_price": 165.0,
+    "optimal_action": "sell",
+    "explanation": "The position is down ~6% from entry (180 -> 169.2), well past the 3% stop-loss rule, on negative news and broken momentum (below 10-day average). The disciplined action is to cut the loss."
+  },
+  "scoring": {
+    "sell": 1.0,
+    "hold": 0.0,
+    "nothing": 0.2,
+    "buy": -1.0
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "scenario_id": "bull_breakout_001",
+  "description": "NVDA breaks to a new high on heavy, above-average volume after positive sector news. Clean momentum setup with cash available and no chasing.",
+  "context": {
+    "portfolio": {
+      "cash": 10000,
+      "positions": {}
+    },
+    "market_status": {"NASDAQ": "open", "any_open": true},
+    "observations": {
+      "NVDA.US": {
+        "quote": {"price": 124.8, "change_pct": 2.3, "volume": 62000000},
+        "candles": [
+          {"o": 118.0, "h": 119.5, "l": 117.2, "c": 119.0, "v": 38000000},
+          {"o": 119.2, "h": 121.0, "l": 118.8, "c": 120.6, "v": 41000000},
+          {"o": 120.8, "h": 122.4, "l": 120.1, "c": 122.0, "v": 45000000},
+          {"o": 122.1, "h": 125.1, "l": 121.9, "c": 124.8, "v": 62000000}
+        ],
+        "news": [
+          "NVDA hits record high as data-center demand outlook raised",
+          "Two analysts lift price targets ahead of GPU launch"
+        ],
+        "momentum_signals": {
+          "above_10d_avg": true,
+          "volume_ratio": 1.6,
+          "distance_from_high_pct": 0.1,
+          "moved_pct_yesterday": 2.1
+        }
+      }
+    },
+    "recent_decisions": []
+  },
+  "ground_truth": {
+    "next_session_price": 129.5,
+    "optimal_action": "buy",
+    "explanation": "Price above the 10-day average, volume confirmation above 1.2x, breakout to new highs, and yesterday's move under 5% means it is not a chase. A momentum agent should buy a sized position."
+  },
+  "scoring": {
+    "buy": 1.0,
+    "nothing": 0.2,
+    "hold": 0.0,
+    "sell": -1.0
+  }
+}

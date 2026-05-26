@@ -269,6 +269,82 @@ The bot reuses the existing `FREEDOM24_PUB_KEY`/`FREEDOM24_PRIV_KEY` for broker
 auth and runs alongside `freedom24-mcp`. Redeploy after changes with
 `cd /opt/freedom24 && git pull && sudo systemctl restart freedom24-mcp freedom24-bot`.
 
+## Phase 3 — Autonomous Agent
+
+A disciplined **paper-trading** agent (`agent/`) that runs observe→reason→act→log
+cycles on top of `freedom24_core`. It calls the broker library directly (not via
+MCP stdio) for read-only market data, asks a Claude model for a decision in a
+strict `<thinking>`/`<decision>` format, executes against an in-memory paper
+portfolio (never a real order), and logs every decision to SQLite (`logs/agent.db`).
+
+```powershell
+# log decisions without trading (default), 20 cycles, 5-min spacing
+.venv\Scripts\python.exe -m agent --strategy momentum --cycles 20
+
+# enable paper execution (still never places a real broker order)
+.venv\Scripts\python.exe -m agent --strategy momentum --no-dry-run --cycles 20
+```
+
+Needs broker credentials (for market data) plus a Claude model backend. The
+decision model is configurable via `AGENT_MODEL` (default `claude-opus-4-7`).
+Risk rules are enforced in code: max 5% of the portfolio per new position, no
+overspending cash, and no selling shares you don't hold.
+
+#### Model backend — API key *or* Claude Max subscription
+
+Both the agent decision and the eval judge go through one pluggable backend,
+selected by `--backend` (or the `AGENT_BACKEND` env var):
+
+| Backend | Auth | Billing |
+|---------|------|---------|
+| `api` (default) | `ANTHROPIC_API_KEY` (Anthropic Console) | pay-as-you-go |
+| `claude_code` | your Claude **Max/Pro** login | the subscription (no API key) |
+
+To run on your Max subscription with **no API key**, install the Agent SDK and
+log in once, then pass the backend:
+
+```powershell
+.venv\Scripts\pip install claude-agent-sdk
+claude login                                   # one-time; uses your Max plan
+.venv\Scripts\python.exe -m agent --strategy momentum --backend claude_code --cycles 20
+```
+
+The `claude_code` backend drives the Claude Code CLI under the hood (`claude`
+must be installed and logged in on whatever host runs the agent). Subscription
+usage limits apply, so keep `--interval` reasonable for a long-running loop.
+
+## Phase 4 — Evals
+
+An offline harness (`evals/`) scores the agent's decision quality on five
+hand-authored scenarios. Each scenario carries a pre-baked market context, so the
+broker is never called — only the Anthropic API, once for the agent's decision
+and once for a Claude-as-judge (`JUDGE_MODEL`, default `claude-sonnet-4-6`).
+
+```powershell
+# default 'api' backend (needs ANTHROPIC_API_KEY)
+.venv\Scripts\python.exe -m evals --scenarios all --verbose
+
+# or run the evals on your Claude Max subscription (no API key)
+.venv\Scripts\python.exe -m evals --scenarios all --backend claude_code --verbose
+```
+
+The judge scores five dimensions (evidence use, risk awareness, consistency, rule
+adherence, calibration); `metrics.py` reports the optimal-action hit rate and a
+`consistency_gap` flagging "sounds smart but acts poorly". Both the agent decision
+and the judge honor `--backend` / `AGENT_BACKEND` (see the backend table above).
+
+### Latest eval results
+
+| Metric | Score |
+|--------|-------|
+| Scenario Score | _pending first run_ |
+| Avg Reasoning Quality | _pending first run_ |
+| Best dimension | _pending first run_ |
+| Needs work | _pending first run_ |
+
+> Run `python -m evals --scenarios all` with `ANTHROPIC_API_KEY` set to populate
+> this table. (Live runs call the paid Anthropic API, so results are not baked in.)
+
 ## Command names
 
 All API command (`cmd`) names live in one place — the `COMMANDS` dict in
@@ -335,6 +411,18 @@ freedom_mcp/
 │   ├── scheduling.py  #   tz-aware report scheduling
 │   ├── security.py    #   single-chat-id access control
 │   └── state.py       #   relayed-alert-ID persistence
+├── agent/             # Phase 3: autonomous paper-trading agent (python -m agent)
+│   ├── agent.py       #   TradingAgent loop + decision parsing
+│   ├── memory.py      #   SQLite decision log
+│   ├── portfolio_state.py  #   paper portfolio + risk rules
+│   ├── tools.py       #   async wrappers over freedom24_core
+│   ├── prompts.py     #   system + cycle prompts
+│   └── strategies/    #   base + momentum
+├── evals/             # Phase 4: offline eval harness (python -m evals)
+│   ├── run_evals.py   #   scenario runner + report
+│   ├── judge.py       #   Claude-as-judge scorer
+│   ├── metrics.py     #   scenario score, judge dims, consistency gap
+│   └── scenarios/     #   5 offline scenarios (JSON)
 ├── deploy/            # systemd unit(s)
 ├── tests/             # pytest suite
 ├── .env.example       # credential template

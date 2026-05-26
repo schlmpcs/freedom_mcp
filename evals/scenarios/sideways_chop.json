@@ -1,0 +1,42 @@
+{
+  "scenario_id": "sideways_chop_001",
+  "description": "MSFT drifts in a tight range on below-average volume with no catalyst. There is no momentum edge to act on.",
+  "context": {
+    "portfolio": {
+      "cash": 10000,
+      "positions": {}
+    },
+    "market_status": {"NASDAQ": "open", "any_open": true},
+    "observations": {
+      "MSFT.US": {
+        "quote": {"price": 414.5, "change_pct": 0.1, "volume": 14000000},
+        "candles": [
+          {"o": 413.0, "h": 416.0, "l": 412.0, "c": 414.0, "v": 15000000},
+          {"o": 414.2, "h": 416.5, "l": 412.8, "c": 415.0, "v": 13500000},
+          {"o": 415.1, "h": 416.2, "l": 413.0, "c": 414.5, "v": 14000000}
+        ],
+        "news": [
+          "No company-specific news; markets quiet ahead of holiday"
+        ],
+        "momentum_signals": {
+          "above_10d_avg": true,
+          "volume_ratio": 0.9,
+          "distance_from_high_pct": 0.4,
+          "moved_pct_yesterday": 0.2
+        }
+      }
+    },
+    "recent_decisions": []
+  },
+  "ground_truth": {
+    "next_session_price": 415.0,
+    "optimal_action": "nothing",
+    "explanation": "Volume is below average (no breakout confirmation) and price is range-bound. The momentum entry condition (volume_ratio > 1.2) fails, so the disciplined action is to do nothing."
+  },
+  "scoring": {
+    "nothing": 1.0,
+    "hold": 0.5,
+    "buy": -0.5,
+    "sell": -0.5
+  }
+}

@@ -1,0 +1,27 @@
+[project]
+name = "freedom24-mcp"
+version = "0.1.0"
+description = "MCP server for the Freedom24 / Tradernet brokerage API"
+requires-python = ">=3.10"
+
+# Core: everything the MCP server itself needs over stdio.
+dependencies = [
+    "mcp>=1.2.0",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "cryptography>=42.0.0",
+]
+
+[project.optional-dependencies]
+# Remote streamable-HTTP transport (MCP_TRANSPORT=streamable-http).
+http = ["uvicorn>=0.30"]
+# Telegram bot + automation worker (python -m freedom24_bot).
+bot = ["python-telegram-bot[job-queue]>=21,<22"]
+# Autonomous paper-trading agent.
+agent = ["anthropic>=0.40.0", "claude-agent-sdk>=0.2.0"]
+dev = ["pytest>=8.0"]
+
+# uv manages the .venv and a matching Python automatically; the repo uses a flat
+# module layout (not an installable wheel), so tell uv not to build it.
+[tool.uv]
+package = false

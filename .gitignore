@@ -32,3 +32,6 @@ logs/
 # --- Agent + evals are source, NOT ignored (explicit exceptions) ---
 !agent/
 !evals/
+
+# macOS
+.DS_Store

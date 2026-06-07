@@ -33,30 +33,25 @@ Requests are signed with **HMAC-SHA256** using the secret key (this server
 handles that for you). Login/password auth is also supported, but some accounts
 only expose API-key access.
 
-## 2. Install
+## 2. Install & connect (one command)
 
-Requires Python 3.10+.
-
-```bash
-# from the project directory
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
-
-pip install -r requirements.txt
-```
-
-Or with [uv](https://github.com/astral-sh/uv): `uv pip install -r requirements.txt`.
-
-## 3. Configure credentials
-
-Copy the template and fill it in:
+You need [`uv`](https://github.com/astral-sh/uv) (`brew install uv`, or
+`curl -LsSf https://astral.sh/uv/install.sh | sh`) and the Claude Code CLI.
+Then, from the project directory:
 
 ```bash
-cp .env.example .env
+./install.sh
 ```
+
+That's it. The script:
+
+- uses `uv` to create the virtualenv, install dependencies, and fetch a matching
+  Python (3.10+) — no manual `venv`/`pip` steps,
+- creates `.env` from the template if you don't have one,
+- registers the `freedom24` server with Claude Code (user scope, so it's
+  available in every project — pass `--project` to scope it to this repo only).
+
+Then **fill in your credentials** in `.env`:
 
 ```dotenv
 # Option A — API key (recommended)
@@ -73,66 +68,39 @@ FREEDOM24_TIMEOUT=15
 FREEDOM24_DRY_RUN=false
 ```
 
-`.env` is gitignored. The server auto-logs-in on the first tool call using
-whichever credentials are present (API key takes priority).
-
-You normally **don't launch the server yourself** — Claude Code starts it on
-demand over stdio (step 4 wires that up). But you can run it directly as a quick
-sanity check, using the **venv interpreter** (a bare `python` won't have the
-deps). It prints startup info to stderr and then waits on stdio — `Ctrl-C` to
-stop:
-
-```bash
-.venv/bin/python freedom24_mcp.py            # macOS/Linux
-.venv\Scripts\python.exe freedom24_mcp.py    # Windows
-```
-
-## 4. Add to Claude Code (run locally)
-
-This is the normal way to use it locally: you **register the server once**, and
-Claude Code launches it over **stdio** automatically each session — there's no
-process to keep running, no port, nothing exposed on the network. (Running it as
-a remote HTTP service on a server is a separate, optional setup — see
-[Remote deployment](#remote-deployment) below.)
-
-Add an entry to your MCP config (`~/.claude.json`, or via `claude mcp add`).
-Point `command` at the **venv interpreter** and use the **absolute path** to
-`freedom24_mcp.py` — both must be absolute, since Claude Code launches this from
-its own working directory:
-
-```json
-{
-  "mcpServers": {
-    "freedom24": {
-      "command": "/absolute/path/to/.venv/bin/python",
-      "args": ["/absolute/path/to/freedom24_mcp.py"],
-      "env": {
-        "FREEDOM24_PUB_KEY": "your_public_key",
-        "FREEDOM24_PRIV_KEY": "your_secret_key"
-      }
-    }
-  }
-}
-```
-
-On Windows, `command` is `C:\\absolute\\path\\to\\.venv\\Scripts\\python.exe`.
-Login/password variant — same shape, swap the `env` block:
-
-```json
-      "env": {
-        "FREEDOM24_LOGIN": "your_login",
-        "FREEDOM24_PASSWORD": "your_password"
-      }
-```
-
-> Credentials in `env` here override `.env`. If you'd rather keep them only in
-> `.env`, you can omit the `env` block — the server reads `.env` from its own
-> directory on startup.
+`.env` is gitignored and read from the project directory on startup. The server
+auto-logs-in on the first tool call using whichever credentials are present (API
+key takes priority).
 
 Restart Claude Code (or run `/mcp`) and you should see the `freedom24` server
 with its tools. Ask it "check my Freedom24 session is working" to confirm.
 
-## 5. Example prompts
+### What the installer runs (manual setup)
+
+If you'd rather not run the script — or want to understand it — the registration
+it performs is a single `claude mcp add` that points at `uv run`, which handles
+the venv/deps on every launch:
+
+```bash
+uv sync --all-extras          # one-time: build the venv
+claude mcp add freedom24 --scope user -- uv run --directory "$PWD" python freedom24_mcp.py
+```
+
+Because the command goes through `uv run`, there are no absolute interpreter
+paths to hardcode and nothing to keep running — Claude Code launches it over
+**stdio** each session (no port, nothing exposed on the network). You can also
+sanity-check it directly (it logs to stderr, then waits on stdio — `Ctrl-C` to
+stop):
+
+```bash
+uv run python freedom24_mcp.py
+```
+
+> Prefer to keep using a plain `pip` venv? `pip install -r requirements.txt`
+> still works; just register `claude mcp add freedom24 -- /abs/path/.venv/bin/python /abs/path/freedom24_mcp.py`
+> with absolute paths (on Windows, `...\.venv\Scripts\python.exe`).
+
+## 3. Example prompts
 
 - "Check my Freedom24 session is working."
 - "Show my Freedom24 portfolio and total P&L."
@@ -211,10 +179,10 @@ cost** — and uses long-polling, so it needs no inbound network exposure.
 
 1. Create a bot with **@BotFather** and copy the token.
 2. Get your numeric chat ID (message **@userinfobot**).
-3. Install the bot's dependency into your venv (it's already in
-   `requirements.txt`):
+3. Install the bot's dependencies (already covered if you ran `./install.sh`,
+   which does `uv sync --all-extras`; otherwise):
    ```bash
-   pip install -r requirements.txt
+   uv sync --extra bot
    ```
 4. Add to `.env` (see `.env.example` for the full block):
    ```dotenv
@@ -303,10 +271,10 @@ selected by `--backend` (or the `AGENT_BACKEND` env var):
 To run on your Max subscription with **no API key**, install the Agent SDK and
 log in once, then pass the backend:
 
-```powershell
-.venv\Scripts\pip install claude-agent-sdk
-claude login                                   # one-time; uses your Max plan
-.venv\Scripts\python.exe -m agent --strategy momentum --backend claude_code --cycles 20
+```bash
+uv sync --extra agent          # installs claude-agent-sdk (already done by ./install.sh)
+claude login                   # one-time; uses your Max plan
+uv run python -m agent --strategy momentum --backend claude_code --cycles 20
 ```
 
 The `claude_code` backend drives the Claude Code CLI under the hood (`claude`
@@ -425,7 +393,9 @@ freedom_mcp/
 │   └── scenarios/     #   5 offline scenarios (JSON)
 ├── deploy/            # systemd unit(s)
 ├── tests/             # pytest suite
+├── install.sh         # one-command installer (uv + claude mcp add)
+├── pyproject.toml     # deps + extras, managed by uv (uv.lock pins them)
 ├── .env.example       # credential template
-├── requirements.txt
+├── requirements.txt   # legacy pip install (still works; uv is preferred)
 └── README.md
 ```

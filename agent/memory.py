@@ -13,6 +13,7 @@ connection, which keeps it safe to call from worker threads (e.g. via
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -89,6 +90,11 @@ class AgentMemory:
 
     # -- schema -------------------------------------------------------------
     def _connect(self) -> sqlite3.Connection:
+        # SQLite won't create missing parent directories; do it ourselves so a
+        # fresh checkout (e.g. logs/agent.db on a new server) works out of the box.
+        parent = os.path.dirname(self.db_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn

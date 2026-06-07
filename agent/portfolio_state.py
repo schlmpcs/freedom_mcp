@@ -14,6 +14,7 @@ agent's decision log.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -42,6 +43,10 @@ class PaperPortfolio:
 
     # -- persistence --------------------------------------------------------
     def _ensure_schema(self) -> None:
+        # SQLite won't create missing parent directories; ensure they exist.
+        parent = os.path.dirname(self.db_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """

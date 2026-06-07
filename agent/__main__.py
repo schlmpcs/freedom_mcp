@@ -15,10 +15,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+import shutil
 import sys
 
 from agent.agent import TradingAgent
 from agent.memory import DEFAULT_DB_PATH, AgentMemory
+from agent.model_backend import resolve_backend
 from agent.portfolio_state import PaperPortfolio
 from agent.strategies import get_strategy
 from freedom24_core import TradernetClient, load_config, setup_logging
@@ -48,9 +51,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--backend",
         default=None,
-        choices=["api", "claude_code"],
-        help="Model backend: 'api' (ANTHROPIC_API_KEY) or 'claude_code' (Claude Max "
-        "subscription via the Agent SDK; run `claude login` first). "
+        choices=["api", "claude_code", "codex"],
+        help="Model backend: 'api' (ANTHROPIC_API_KEY), 'claude_code' (Claude Max "
+        "subscription via the Agent SDK; run `claude login` first) or 'codex' "
+        "(Codex CLI subscription; run `codex login` first). "
         "Defaults to $AGENT_BACKEND or 'api'.",
     )
     return parser.parse_args(argv)
@@ -71,6 +75,27 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "No broker credentials configured (.env). The agent needs read access "
             "to fetch market observations. Set FREEDOM24_PUB_KEY + FREEDOM24_PRIV_KEY.",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Fail fast on a missing decision-model credential. The 'api' backend builds
+    # an AsyncAnthropic client that only raises at request time, which otherwise
+    # surfaces mid-cycle as a cryptic 'Could not resolve authentication method'
+    # after broker calls have already run.
+    backend = resolve_backend(args.backend)
+    if backend == "api" and not os.getenv("ANTHROPIC_API_KEY"):
+        print(
+            "AGENT_BACKEND=api requires ANTHROPIC_API_KEY to be set (.env or env). "
+            "Set it, or use a subscription backend instead: AGENT_BACKEND=claude_code "
+            "(run `claude login` first) or AGENT_BACKEND=codex (run `codex login` first).",
+            file=sys.stderr,
+        )
+        return 2
+    if backend == "codex" and shutil.which("codex") is None:
+        print(
+            "AGENT_BACKEND=codex requires the `codex` CLI on PATH, logged in to your "
+            "ChatGPT/Codex plan (run `codex login` first).",
             file=sys.stderr,
         )
         return 2

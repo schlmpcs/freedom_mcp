@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -122,6 +123,13 @@ async def run_all_scenarios(
         from anthropic import AsyncAnthropic
 
         client = AsyncAnthropic()
+    elif resolved == "codex" and shutil.which("codex") is None:
+        print(
+            "AGENT_BACKEND=codex requires the `codex` CLI on PATH, logged in to your "
+            "ChatGPT/Codex plan (run `codex login` first).",
+            file=sys.stderr,
+        )
+        return None
 
     scenarios = load_scenarios(names)
     if not scenarios:

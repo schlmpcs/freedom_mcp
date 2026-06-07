@@ -9,33 +9,43 @@ prompt and a user message, return text" — so that is the entire surface here
 * ``claude_code`` — the ``claude-agent-sdk``, which runs on top of the Claude
   Code CLI and authenticates with your **Claude Max/Pro** login (run ``claude
   login`` once). No API key required; usage draws on the subscription.
+* ``codex`` — shells out to the **Codex CLI** (``codex exec``), authenticated
+  with your **ChatGPT/Codex** login (run ``codex login`` once). No API key
+  required; usage draws on the subscription.
 
-Select with the ``AGENT_BACKEND`` env var or the ``backend`` argument. Both
-third-party imports are deferred into their backend functions so importing this
-module never requires either dependency — that keeps the offline tests and the
-unused backend's dependency optional.
+Select with the ``AGENT_BACKEND`` env var or the ``backend`` argument. The
+``anthropic`` import is deferred into its backend function and the ``codex``
+backend only needs the CLI on ``PATH`` — so importing this module never requires
+any optional dependency, which keeps the offline tests and the unused backends'
+dependencies optional.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
+import tempfile
 from typing import Any, Optional
 
 DEFAULT_BACKEND = "api"
 _API_ALIASES = {"api", "anthropic", "key"}
 _CLAUDE_CODE_ALIASES = {"claude_code", "claude-code", "agent_sdk", "agent-sdk", "subscription", "max"}
+_CODEX_ALIASES = {"codex", "codex_cli", "codex-cli", "openai_codex", "openai-codex"}
 
 
 def resolve_backend(backend: Optional[str] = None) -> str:
-    """Normalise a backend selector to ``"api"`` or ``"claude_code"``."""
+    """Normalise a backend selector to ``"api"``, ``"claude_code"`` or ``"codex"``."""
     raw = (backend or os.getenv("AGENT_BACKEND") or DEFAULT_BACKEND).strip().lower()
     if raw in _API_ALIASES:
         return "api"
     if raw in _CLAUDE_CODE_ALIASES:
         return "claude_code"
+    if raw in _CODEX_ALIASES:
+        return "codex"
     raise ValueError(
-        f"unknown backend {raw!r}; use 'api' (Anthropic API key) or "
-        f"'claude_code' (Claude Max subscription via the Agent SDK)"
+        f"unknown backend {raw!r}; use 'api' (Anthropic API key), "
+        f"'claude_code' (Claude Max subscription via the Agent SDK) or "
+        f"'codex' (Codex CLI subscription)"
     )
 
 
@@ -52,6 +62,8 @@ async def complete_text(
     resolved = resolve_backend(backend)
     if resolved == "claude_code":
         return await _complete_via_agent_sdk(system_prompt, user_message, model=model, max_tokens=max_tokens)
+    if resolved == "codex":
+        return await _complete_via_codex(system_prompt, user_message, model=model, max_tokens=max_tokens)
     return await _complete_via_api(
         system_prompt, user_message, model=model, max_tokens=max_tokens, anthropic_client=anthropic_client
     )
@@ -139,3 +151,84 @@ async def _complete_via_agent_sdk(
 
     text = "\n".join(parts).strip()
     return text or fallback.strip()
+
+
+# ---------------------------------------------------------------------------
+# Backend: Codex CLI (ChatGPT/Codex subscription)
+# ---------------------------------------------------------------------------
+def _codex_model(model: Optional[str]) -> Optional[str]:
+    """Pick the model id to pass to ``codex exec``.
+
+    Prefers an explicit ``AGENT_CODEX_MODEL``; otherwise forwards ``model`` only
+    if it is not a Claude id (the agent defaults to a Claude model, which Codex
+    cannot serve). ``None`` means "let the Codex CLI use its configured default".
+    """
+    env = os.getenv("AGENT_CODEX_MODEL")
+    if env:
+        return env
+    if model and not model.lower().startswith("claude"):
+        return model
+    return None
+
+
+async def _complete_via_codex(
+    system_prompt: str,
+    user_message: str,
+    *,
+    model: str,
+    max_tokens: int,  # noqa: ARG001 - Codex manages output length itself
+) -> str:
+    # Codex `exec` has no separate system-prompt channel, so fold it into the
+    # instructions. The full prompt is piped on stdin (no length limit, no
+    # shell-escaping pitfalls); the final assistant message is captured via
+    # --output-last-message rather than scraped from stdout.
+    prompt = f"{system_prompt}\n\n{user_message}" if system_prompt else user_message
+
+    cmd = [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",  # the agent runs anywhere, not just in a repo
+        "--sandbox",
+        "read-only",  # pure text generation; never let Codex mutate anything
+        "--ephemeral",  # don't persist session files
+        "--color",
+        "never",
+    ]
+    codex_model = _codex_model(model)
+    if codex_model:
+        cmd += ["-m", codex_model]
+
+    with tempfile.NamedTemporaryFile("r", suffix=".txt", delete=False) as tmp:
+        out_path = tmp.name
+    cmd += ["--output-last-message", out_path]
+
+    try:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:  # pragma: no cover - only without the CLI
+            raise RuntimeError(
+                "codex backend requires the `codex` CLI installed and logged in to "
+                "your ChatGPT/Codex plan (run `codex login` first)."
+            ) from exc
+
+        stdout_b, stderr_b = await proc.communicate(prompt.encode())
+        if proc.returncode != 0:
+            err = stderr_b.decode(errors="replace").strip() or stdout_b.decode(errors="replace").strip()
+            raise RuntimeError(f"codex exec failed (exit {proc.returncode}): {err}")
+
+        try:
+            with open(out_path, "r", encoding="utf-8") as fh:
+                last = fh.read().strip()
+        except OSError:
+            last = ""
+        return last or stdout_b.decode(errors="replace").strip()
+    finally:
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass

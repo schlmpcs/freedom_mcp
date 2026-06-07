@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from agent.model_backend import complete_text, resolve_backend
+from agent.model_backend import _codex_model, complete_text, resolve_backend
 
 
 def test_resolve_backend_defaults_to_api(monkeypatch):
@@ -28,9 +28,35 @@ def test_resolve_backend_aliases():
     assert resolve_backend("anthropic") == "api"
 
 
+def test_resolve_backend_codex_aliases(monkeypatch):
+    monkeypatch.delenv("AGENT_BACKEND", raising=False)
+    assert resolve_backend("codex") == "codex"
+    assert resolve_backend("codex_cli") == "codex"
+    assert resolve_backend("openai_codex") == "codex"
+    monkeypatch.setenv("AGENT_BACKEND", "codex")
+    assert resolve_backend() == "codex"
+
+
 def test_resolve_backend_unknown_raises():
     with pytest.raises(ValueError):
         resolve_backend("gpt")
+
+
+def test_codex_model_skips_claude_default(monkeypatch):
+    # The agent defaults to a Claude id; Codex can't serve it -> None (CLI default).
+    monkeypatch.delenv("AGENT_CODEX_MODEL", raising=False)
+    assert _codex_model("claude-opus-4-7") is None
+
+
+def test_codex_model_forwards_non_claude(monkeypatch):
+    monkeypatch.delenv("AGENT_CODEX_MODEL", raising=False)
+    assert _codex_model("gpt-5.1-codex") == "gpt-5.1-codex"
+
+
+def test_codex_model_env_overrides_everything(monkeypatch):
+    monkeypatch.setenv("AGENT_CODEX_MODEL", "o4-mini")
+    assert _codex_model("claude-opus-4-7") == "o4-mini"
+    assert _codex_model("gpt-5.1-codex") == "o4-mini"
 
 
 class _FakeBlock:

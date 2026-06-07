@@ -105,8 +105,9 @@ async def request_decision(
     """Ask the model for a decision and return its raw text response.
 
     Routes through :func:`agent.model_backend.complete_text`, so the same call
-    works against the Anthropic API (``anthropic_client``) or the Claude Code
-    subscription backend depending on ``backend`` / ``AGENT_BACKEND``.
+    works against the Anthropic API (``anthropic_client``), the Claude Code
+    subscription or the Codex CLI subscription depending on ``backend`` /
+    ``AGENT_BACKEND``.
     """
     return await complete_text(
         system_prompt,
@@ -179,8 +180,8 @@ class TradingAgent:
         self.dry_run = dry_run
         self.backend = resolve_backend(backend)
         self.model = model or os.getenv("AGENT_MODEL") or DEFAULT_AGENT_MODEL
-        # Only build an API client for the api backend; the claude_code backend
-        # uses the Claude Code login and needs no ANTHROPIC_API_KEY.
+        # Only build an API client for the api backend; the claude_code and codex
+        # backends use their own CLI login and need no ANTHROPIC_API_KEY.
         if anthropic_client is not None:
             self.anthropic = anthropic_client
         elif self.backend == "api":

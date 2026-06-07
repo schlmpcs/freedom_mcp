@@ -30,9 +30,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--backend",
         default=None,
-        choices=["api", "claude_code"],
-        help="Model backend: 'api' (ANTHROPIC_API_KEY) or 'claude_code' (Max subscription). "
-        "Defaults to $AGENT_BACKEND or 'api'.",
+        choices=["api", "claude_code", "codex"],
+        help="Model backend: 'api' (ANTHROPIC_API_KEY), 'claude_code' (Max subscription) "
+        "or 'codex' (Codex CLI subscription). Defaults to $AGENT_BACKEND or 'api'.",
     )
     return parser.parse_args(argv)
 

@@ -1,0 +1,36 @@
+# Freedom24 MCP server over streamable-HTTP (remote deployment).
+# Lets you reach the broker from any machine via `claude mcp add --transport http`.
+#
+# Prereqs on the droplet:
+#   cd /opt/freedom24 && git pull && uv sync --all-extras   # installs uvicorn (http extra)
+#   add to /opt/freedom24/.env:
+#     MCP_TRANSPORT=streamable-http
+#     MCP_HOST=127.0.0.1
+#     MCP_PORT=8000
+#     MCP_BEARER_TOKEN=<uv run python -c "import secrets; print(secrets.token_urlsafe(32))">
+#
+# Install the unit:
+#   sudo cp deploy/freedom24-mcp.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now freedom24-mcp
+#   journalctl -u freedom24-mcp -f   # expect "Starting MCP server (streamable-http) on 127.0.0.1:8000"
+#
+# Adjust the /opt/freedom24 paths if your checkout lives elsewhere.
+# It binds to 127.0.0.1 only -- put it behind a TLS reverse proxy; it carries
+# live brokerage access. ExecStart uses the venv python directly (no uv at
+# runtime), so `uv sync` only needs to have run once to build .venv.
+[Unit]
+Description=Freedom24 MCP server (streamable-HTTP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/freedom24
+EnvironmentFile=/opt/freedom24/.env
+ExecStart=/opt/freedom24/.venv/bin/python freedom24_mcp.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

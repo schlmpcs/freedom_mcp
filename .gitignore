@@ -19,6 +19,7 @@ venv/
 # --- Local-only (not for the repo) ---
 docs/
 CLAUDE.md
+.claude/settings.local.json
 sigprobe*.py
 *.log
 

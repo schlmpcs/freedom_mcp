@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from agent.strategies.base import BaseStrategy
+from freedom24_core.skill_adapter import candles_to_ohlcv
 
 _SYSTEM_PROMPT = """
 Momentum strategy rules:
@@ -106,6 +107,19 @@ def _extract_series(candles: Any) -> tuple[list[float], list[float], list[float]
     """Return (closes, volumes, highs) from a variety of candle payload shapes."""
     if not candles or isinstance(candles, dict) and candles.get("error"):
         return [], [], []
+
+    # Prefer the shared adapter, which understands Freedom24's nested
+    # ``getQuotesHistory`` HLOC shape ({"hloc": {ticker: [[h,l,o,c],...]},
+    # "vl": {...}, "xSeries": {...}}, optionally under "result") as well as a
+    # list-of-dicts. The inline parsing below is kept as a defensive fallback
+    # for any shape the adapter does not recognise.
+    ohlcv = candles_to_ohlcv(candles)
+    if ohlcv:
+        closes = _clean([row.get("close") for row in ohlcv])
+        volumes = [row.get("volume") for row in ohlcv]
+        highs = _clean([row.get("high") for row in ohlcv])
+        if closes:
+            return closes, volumes, highs
 
     rows = _as_row_list(candles)
     if rows:

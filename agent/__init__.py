@@ -4,7 +4,7 @@ Public surface: the :class:`~agent.agent.TradingAgent` loop, the
 :class:`~agent.memory.AgentMemory` decision log, the
 :class:`~agent.portfolio_state.PaperPortfolio` tracker, and the strategy
 registry. The agent never places real broker orders — all execution is against
-the in-memory paper portfolio.
+the paper portfolio.
 """
 
 from __future__ import annotations

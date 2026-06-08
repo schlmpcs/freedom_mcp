@@ -156,6 +156,16 @@ def _deep_find_number(node: Any, target_key: str) -> Optional[float]:
     return None
 
 
+def extract_price_map(observations: dict) -> dict[str, float]:
+    """Return usable last prices from an observations mapping."""
+    prices: dict[str, float] = {}
+    for ticker in observations:
+        price = extract_price(observations, ticker)
+        if price is not None and price > 0:
+            prices[ticker] = price
+    return prices
+
+
 # ---------------------------------------------------------------------------
 # The agent
 # ---------------------------------------------------------------------------
@@ -190,7 +200,7 @@ class TradingAgent:
             self.anthropic = AsyncAnthropic()
         else:
             self.anthropic = None
-        self.cycle = 0
+        self.cycle = max(self.memory.get_latest_cycle(), self.portfolio.get_latest_cycle())
 
     async def run_cycle(self) -> Optional[Decision]:
         """One full observe→reason→act→log cycle. Returns ``None`` if market closed."""
@@ -204,6 +214,7 @@ class TradingAgent:
 
         observations = await observe_market(self.client, self.strategy.watchlist)
         filtered = self.strategy.filter_observations(observations)
+        self.portfolio.update_prices(extract_price_map(filtered))
         portfolio_state = self.portfolio.get_state()
         recent_decisions = self.memory.get_recent(5)
 
@@ -241,6 +252,7 @@ class TradingAgent:
 
         # 5. LOG
         self.memory.save(decision)
+        self.portfolio.record_equity_snapshot(self.cycle)
         self._print_decision(decision)
         return decision
 
@@ -261,7 +273,8 @@ class TradingAgent:
         print(
             f"[cycle {decision.cycle}] {decision.action.upper():7s} "
             f"{decision.ticker or '-':10s} qty={decision.quantity} "
-            f"conf={decision.confidence:.2f} :: {decision.reasoning_summary}"
+            f"conf={decision.confidence:.2f} :: {decision.reasoning_summary}",
+            file=sys.stderr,
         )
 
     async def run(self, cycles: Optional[int] = None, interval_seconds: int = 300) -> None:

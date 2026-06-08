@@ -197,6 +197,12 @@ class AgentMemory:
             ).fetchall()
         return [self._row_to_decision(r) for r in rows]
 
+    def get_latest_cycle(self) -> int:
+        """Return the latest decision cycle number, or zero for an empty log."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT MAX(cycle) AS cycle FROM decisions").fetchone()
+        return int(row["cycle"] or 0) if row is not None else 0
+
     def get_stats(self) -> dict[str, Any]:
         """Return aggregate stats over all decisions.
 

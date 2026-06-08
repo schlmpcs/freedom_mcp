@@ -209,7 +209,11 @@ class TradingAgent:
         # 1. OBSERVE
         market_status = await get_market_status(self.client)
         if not market_status.get("any_open"):
-            print("Market closed, skipping cycle.", file=sys.stderr)
+            source = market_status.get("source", "unknown")
+            print(
+                f"[cycle {self.cycle}] US market closed (via {source}); skipping cycle.",
+                file=sys.stderr,
+            )
             return None
 
         observations = await observe_market(self.client, self.strategy.watchlist)

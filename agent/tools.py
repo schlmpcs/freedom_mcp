@@ -14,8 +14,15 @@ from __future__ import annotations
 
 import asyncio
 import math
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+try:  # DST-correct US session fallback; system tzdata is present on Linux servers.
+    from zoneinfo import ZoneInfo
+
+    _NY_TZ: Optional["ZoneInfo"] = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - missing tzdata: fall back to a fixed UTC window
+    _NY_TZ = None
 
 from freedom24_core import COMMANDS, TradernetClient
 from freedom24_core.client import TradernetError
@@ -88,56 +95,105 @@ async def get_portfolio_snapshot(client: TradernetClient) -> dict:
         return {"error": str(exc)}
 
 
-async def get_market_status(client: TradernetClient) -> dict:
-    """Return market/exchange open status with a derived ``any_open`` flag.
+# Freedom24 market code for US cash equities (NYSE/NASDAQ); see docs market-status.md.
+_US_EQUITY_MARKETS = {"FIX"}
+_OPEN_STATUS_VALUES = {"open", "opened", "trading", "regular"}
+_CLOSED_STATUS_VALUES = {"close", "closed", "halt", "halted", "suspended", "pre", "post"}
 
-    The raw Tradernet shape varies by account, so ``any_open`` is detected
-    best-effort by scanning the response for common "open" indicators. If the
-    shape is unrecognised, ``any_open`` defaults to ``True`` (fail-open) so the
-    agent still gets a chance to reason rather than silently skipping forever.
+
+async def get_market_status(client: TradernetClient) -> dict:
+    """Return market status with a derived ``any_open`` flag for US equities.
+
+    The agent trades ``.US`` tickers, so ``any_open`` reflects the US cash market
+    (NYSE/NASDAQ = Freedom24 market code ``FIX``) — *not* unrelated markets such
+    as crypto that trade around the clock and would otherwise keep the gate
+    permanently open. Resolution order:
+
+    1. **Authoritative:** the ``getMarketStatus`` payload's ``FIX`` row status
+       (``result.markets.m[].s``).
+    2. **Fallback** (shape unrecognised or the call failed): a US regular-session
+       heuristic (Mon-Fri, 09:30-16:00 America/New_York). This makes the agent
+       *skip* overnight/weekend cycles instead of failing open and burning a
+       model call every interval.
     """
+    now = datetime.now(timezone.utc)
     try:
         data = await _call(client, "market_status", {})
     except (TradernetError, Exception) as exc:  # noqa: BLE001
-        return {"any_open": False, "error": str(exc)}
+        return {"any_open": _us_session_open(now), "source": "time-fallback", "error": str(exc)}
 
-    return {"any_open": _detect_any_open(data), "raw": data}
+    status_open = _market_open_from_status(data, _US_EQUITY_MARKETS)
+    if status_open is None:
+        return {"any_open": _us_session_open(now), "source": "time-fallback", "raw": data}
+    return {"any_open": status_open, "source": "market-status", "raw": data}
 
 
-def _detect_any_open(data: Any) -> bool:
-    """Best-effort scan for any open market in a market-status response."""
-    open_markers = {"open", "opened", "trading", "regular", "1", "true"}
+def _market_status_rows(data: Any) -> list[dict]:
+    """Extract the per-market rows from a ``getMarketStatus`` payload.
 
-    def walk(node: Any) -> bool:
-        if isinstance(node, dict):
-            for key, value in node.items():
-                key_l = str(key).lower()
-                if key_l in ("open", "is_open", "isopen", "opened") and _truthy(value):
-                    return True
-                if key_l in ("status", "state", "session", "phase") and isinstance(value, str):
-                    if value.strip().lower() in open_markers:
-                        return True
-                if walk(value):
-                    return True
-        elif isinstance(node, list):
-            return any(walk(item) for item in node)
+    Documented shape: ``{"result": {"markets": {"m": [ {row}, ... ]}}}``. Also
+    tolerates an already-unwrapped ``{"m": [...]}`` or a bare list of rows.
+    """
+    node = data
+    if isinstance(node, dict) and isinstance(node.get("result"), dict):
+        node = node["result"]
+    if isinstance(node, dict) and isinstance(node.get("markets"), dict):
+        rows = node["markets"].get("m")
+        if isinstance(rows, list):
+            return [r for r in rows if isinstance(r, dict)]
+    if isinstance(node, dict) and isinstance(node.get("m"), list):
+        return [r for r in node["m"] if isinstance(r, dict)]
+    if isinstance(node, list):
+        return [r for r in node if isinstance(r, dict)]
+    return []
+
+
+def _market_open_from_status(data: Any, market_codes: set[str]) -> Optional[bool]:
+    """Resolve whether any of ``market_codes`` is open from a status payload.
+
+    Returns ``True``/``False`` when at least one matching market row carries a
+    recognised status, else ``None`` so the caller falls back to a heuristic.
+    """
+    rows = _market_status_rows(data)
+    if not rows:
+        return None
+    wanted = {c.upper() for c in market_codes}
+    relevant = [r for r in rows if str(r.get("n2") or r.get("n") or "").upper() in wanted]
+    if not relevant:
+        return None
+
+    resolved = False
+    for row in relevant:
+        status = str(row.get("s") or "").strip().lower()
+        if status in _OPEN_STATUS_VALUES:
+            return True  # any matching market open -> open
+        if status in _CLOSED_STATUS_VALUES:
+            resolved = True
+    return False if resolved else None
+
+
+def _us_session_open(now: datetime) -> bool:
+    """US regular cash-session heuristic: Mon-Fri, 09:30-16:00 America/New_York.
+
+    A timezone-only approximation (ignores US market holidays / half-days), used
+    only as a fallback when the broker's market-status shape is unavailable. Uses
+    ``zoneinfo`` for DST correctness, degrading to a fixed 13:30-20:00 UTC window
+    (EDT) when tzdata is missing.
+    """
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    if _NY_TZ is not None:
+        local = now.astimezone(_NY_TZ)
+        if local.weekday() >= 5:
+            return False
+        minutes = local.hour * 60 + local.minute
+        return 9 * 60 + 30 <= minutes < 16 * 60
+    # tzdata missing: approximate with the summer (EDT) UTC offset.
+    utc = now.astimezone(timezone.utc)
+    if utc.weekday() >= 5:
         return False
-
-    found = walk(data)
-    if found:
-        return True
-    # Unrecognised but non-empty payload: fail open.
-    return bool(data)
-
-
-def _truthy(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value != 0
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "open", "opened", "trading"}
-    return False
+    minutes = utc.hour * 60 + utc.minute
+    return 13 * 60 + 30 <= minutes < 20 * 60
 
 
 async def execute_paper_order(

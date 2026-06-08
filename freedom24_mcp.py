@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from freedom24_core import COMMANDS, TradernetClient, TradernetError, load_config, setup_logging
+from freedom24_core.notify import notify_order
 
 # --- logging: stderr only (stdout is the MCP transport) --------------------
 setup_logging()
@@ -333,6 +334,7 @@ def place_order(
     price: Optional[float] = None,
     order_type: str = "limit",
     confirm: bool = False,
+    notify_skip: bool = False,
 ) -> str:
     """Place a buy or sell order. THIS SPENDS REAL MONEY.
 
@@ -344,6 +346,11 @@ def place_order(
             ignored for "market".
         order_type: "market", "limit", "stop", or "stop_limit".
         confirm: SAFETY GATE. The order is NOT sent unless this is True.
+        notify_skip: SAFETY GATE 2. Before a live submission the server sends a
+            Telegram notification (full order details) and is fail-closed: if
+            the notification can't be sent the order is NOT submitted. Set this
+            True only to bypass the notification (tests / when you have already
+            been notified another way).
 
     Returns the broker's order acknowledgement, or an explanatory error. Always
     show the user the order details and get explicit approval before setting
@@ -398,6 +405,26 @@ def place_order(
                     "next_step": "Re-call place_order with confirm=true to actually submit.",
                 }
             )
+
+        # Pre-trade notification gate (fail-closed): always notify before
+        # spending real money. If the notification can't be delivered we refuse
+        # to submit rather than trade silently.
+        if not notify_skip:
+            notified, detail = notify_order(CONFIG, preview)
+            if not notified:
+                logger.warning("order blocked: pre-trade notification failed (%s)", detail)
+                return _result(
+                    {
+                        "status": "not_sent",
+                        "reason": "pre-trade notification failed",
+                        "detail": detail,
+                        "order_preview": preview,
+                        "next_step": (
+                            "Fix Telegram (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID) and retry, "
+                            "or re-call with notify_skip=true to bypass the notification."
+                        ),
+                    }
+                )
 
         logger.info("Submitting order: %s", preview)
         CLIENT.open_trading_session()  # required before putTradeOrder

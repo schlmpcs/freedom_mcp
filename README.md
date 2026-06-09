@@ -142,6 +142,20 @@ claude mcp add --transport http freedom24 https://your-host/mcp \
 > ⚠️ This exposes a live brokerage account over the network. Use a long random
 > bearer token, always TLS, and treat the token like a password.
 
+### Docker
+
+The whole stack (MCP HTTP server + Telegram bot + optional paper agent) ships as
+a single image. After filling in `.env`:
+
+```bash
+docker compose up -d --build mcp bot          # core services
+docker compose --profile agent up -d agent    # also run the paper agent
+```
+
+`.env` is injected at runtime, never baked into the image. See
+[`deploy/DOCKER.md`](deploy/DOCKER.md) for the full guide, including the stdio
+variant (`docker run -i` launched by Claude Code).
+
 ## Phase 2 — Telegram bot + automation worker
 
 A separate, **deterministic** service (`freedom24_bot/`, run as `python -m

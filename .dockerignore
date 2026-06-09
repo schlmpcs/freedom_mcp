@@ -1,0 +1,44 @@
+# Keep the build context small and — critically — keep secrets and the host
+# (macOS/3.14) virtualenv out of the image.
+
+# --- Secrets: NEVER copy into the image (injected at runtime via env_file) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- Host virtualenv (wrong OS/python; the image builds its own) --------------
+.venv/
+venv/
+
+# --- VCS / tooling ------------------------------------------------------------
+.git/
+.gitignore
+.claude/
+.DS_Store
+
+# --- Python caches ------------------------------------------------------------
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.pytest_cache/
+*.egg-info/
+
+# --- Runtime state (recreated in the container's /data volume) ----------------
+logs/
+bot_state.json
+bot_state.json.tmp
+*.log
+
+# --- Not needed at runtime ----------------------------------------------------
+docs/
+tests/
+evals/
+deploy/
+requirements-dev.txt
+test_live.py
+install.sh

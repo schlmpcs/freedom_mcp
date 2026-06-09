@@ -1,0 +1,65 @@
+# Freedom24 stack — MCP server (HTTP), Telegram bot, and (opt-in) paper agent.
+# One image built once, three long-lived services.
+#
+#   cp .env.example .env        # then fill in real credentials + a strong MCP_BEARER_TOKEN
+#   docker compose up -d --build mcp bot      # core services
+#   docker compose --profile agent up -d agent   # also run the paper-trading agent
+#
+# .env is read by `env_file` and injected at runtime — it is never baked into the
+# image. The `mcp` service binds to 127.0.0.1 on the host only; put a TLS reverse
+# proxy in front before exposing it — it carries live brokerage access.
+
+x-freedom24-common: &freedom24-common
+  build:
+    context: .
+  image: freedom24:local
+  env_file: .env
+  restart: unless-stopped
+  # Persistent state: bot_state.json (relayed alert ids) + agent.db (decisions,
+  # transactions, equity curve). MCP itself is stateless (logs to stdout/stderr).
+  volumes:
+    - freedom24-data:/data
+
+services:
+  mcp:
+    <<: *freedom24-common
+    container_name: freedom24-mcp
+    # These override anything in .env for this service: force the networked
+    # transport and bind to all interfaces *inside* the container (the host
+    # port mapping below still restricts exposure to localhost).
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      # TCP-connect check: proves the server is accepting connections without
+      # needing the bearer token (an unauthenticated HTTP probe would 401).
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 2).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  bot:
+    <<: *freedom24-common
+    container_name: freedom24-bot
+    command: ["python", "-m", "freedom24_bot"]
+    # Persist relayed-alert ids on the volume so a restart doesn't re-fire alerts.
+    environment:
+      BOT_STATE_PATH: /data/bot_state.json
+    # Talks to the broker + Telegram directly via long-polling — no inbound ports,
+    # and it does not depend on the MCP service.
+
+  agent:
+    <<: *freedom24-common
+    container_name: freedom24-agent
+    # Opt-in: only starts with `--profile agent`. Paper-only and dry-run by
+    # default (it never places real broker orders). To let it update the paper
+    # portfolio, append --no-dry-run to this command.
+    command: ["python", "-m", "agent", "--strategy", "momentum", "--interval", "300", "--db", "/data/agent.db"]
+    profiles: ["agent"]
+
+volumes:
+  freedom24-data:

@@ -35,6 +35,28 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project \
         --extra http --extra bot --extra agent
 
+# ---- codex CLI: only used by the agent's AGENT_BACKEND=codex -----------------
+# Static musl build from the official release, picked for the build's target
+# arch (BuildKit sets TARGETARCH). Auth is NOT baked in — the server's
+# `codex login` directory (~/.codex) is mounted into the agent container at
+# runtime (see docker-compose.yml / deploy/DOCKER.md). Pin CODEX_VERSION to
+# upgrade deterministically.
+FROM debian:bookworm-slim AS codex
+ARG CODEX_VERSION=0.138.0
+ARG TARGETARCH
+RUN set -eux; \
+    apt-get update && apt-get install -y --no-install-recommends curl ca-certificates; \
+    case "${TARGETARCH}" in \
+      amd64) triple=x86_64-unknown-linux-musl ;; \
+      arm64) triple=aarch64-unknown-linux-musl ;; \
+      *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fL --retry 3 --proto '=https' --tlsv1.2 -o /tmp/codex.tar.gz \
+      "https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-${triple}.tar.gz"; \
+    tar -xzf /tmp/codex.tar.gz -C /tmp; \
+    install -m 0755 "/tmp/codex-${triple}" /usr/local/bin/codex; \
+    /usr/local/bin/codex --version
+
 # ---- runtime -----------------------------------------------------------------
 FROM python:3.12-slim-bookworm
 
@@ -45,8 +67,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root runtime user; /data holds persistent state (bot_state.json, agent.db).
+# /data is mode 1777 (sticky, world-writable like /tmp) so the agent service can
+# run as the *host* uid that owns the mounted ~/.codex login while bot/mcp run as
+# `app` — both write to /data without an ownership clash.
 RUN useradd --create-home --uid 10001 --shell /bin/bash app \
-    && install -d -o app -g app /data
+    && install -d -m 1777 /data
+
+# Codex CLI for AGENT_BACKEND=codex (harmless dead weight for the mcp/bot services).
+COPY --from=codex /usr/local/bin/codex /usr/local/bin/codex
 
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH" \

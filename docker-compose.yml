@@ -58,6 +58,23 @@ services:
     # Opt-in: only starts with `--profile agent`. Paper-only and dry-run by
     # default (it never places real broker orders). To let it update the paper
     # portfolio, append --no-dry-run to this command.
+    #
+    # AGENT_BACKEND=codex (set in .env) shells out to the bundled `codex` CLI,
+    # which authenticates with the server's `codex login`. To make that work:
+    #   1. on the server, run `codex login` (or copy ~/.codex from a logged-in
+    #      machine) so ~/.codex/auth.json exists;
+    #   2. in .env set CODEX_HOME_HOST to that path, and CODEX_UID/CODEX_GID to
+    #      the owner's `id -u` / `id -g` (so codex can read & refresh its token).
+    # For AGENT_BACKEND=api or claude_code these extra knobs are simply unused.
+    user: "${CODEX_UID:-1000}:${CODEX_GID:-1000}"
+    environment:
+      CODEX_HOME: /codex      # where codex looks for auth.json + config.toml
+      HOME: /tmp              # the host uid has no home dir inside the image
+    volumes:
+      - freedom24-data:/data
+      # Server's codex login, mounted read-write so codex can refresh its token.
+      # Defaults to a dummy path; set CODEX_HOME_HOST in .env for the codex backend.
+      - ${CODEX_HOME_HOST:-./.codex-not-configured}:/codex
     command: ["python", "-m", "agent", "--strategy", "momentum", "--interval", "300", "--db", "/data/agent.db"]
     profiles: ["agent"]
 

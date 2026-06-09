@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 
+from telegram.error import Conflict
 from telegram.ext import Application, CommandHandler
 
 from freedom24_core import TradernetClient, load_config, setup_logging
@@ -35,10 +36,22 @@ def build_application(config: Config, client=None) -> Application:
     app = Application.builder().token(config.telegram_bot_token).build()
     app.bot_data["client"] = client if client is not None else TradernetClient(config)
     app.bot_data["config"] = config
+    app.add_error_handler(log_error)
     chat_filter = build_chat_filter(config.telegram_chat_id)
     for name, handler in _COMMANDS:
         app.add_handler(CommandHandler(name, handler, filters=chat_filter))
     return app
+
+
+async def log_error(update, context) -> None:
+    """Keep expected Telegram polling conflicts readable in container logs."""
+    if isinstance(context.error, Conflict):
+        logger.error(
+            "Telegram polling conflict: another process is calling getUpdates "
+            "for this bot token. Stop the duplicate bot instance or rotate the token."
+        )
+        return
+    logger.exception("Unhandled Telegram bot error", exc_info=context.error)
 
 
 def register_jobs(job_queue, config: Config) -> None:
